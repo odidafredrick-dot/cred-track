@@ -109,6 +109,27 @@ function toAuthError(error: unknown) {
   };
 }
 
+function waitForCurrentUser(timeoutMs = 3000) {
+  if (firebaseAuth.currentUser) {
+    return Promise.resolve(firebaseAuth.currentUser);
+  }
+
+  return new Promise<FirebaseUser | null>((resolve) => {
+    let unsubscribe = () => {};
+
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe();
+      resolve(firebaseAuth.currentUser);
+    }, timeoutMs);
+
+    unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      window.clearTimeout(timeoutId);
+      unsubscribe();
+      resolve(user);
+    });
+  });
+}
+
 export const signIn = {
   email: async ({
     email,
@@ -146,11 +167,7 @@ export const signIn = {
       if (shouldUseRedirectSignIn()) {
         window.sessionStorage.setItem(googleRedirectCallbackKey, callbackURL);
         await signInWithRedirect(firebaseAuth, googleProvider);
-        return {
-          error: {
-            message: "Google sign-in did not open. Please try again.",
-          },
-        };
+        return {};
       }
 
       const credential = await signInWithPopup(firebaseAuth, googleProvider);
@@ -203,8 +220,10 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
     const pendingCallbackURL = window.sessionStorage.getItem(
       googleRedirectCallbackKey
     );
+    const redirectUser =
+      credential?.user || (pendingCallbackURL ? await waitForCurrentUser() : null);
 
-    if (!credential?.user) {
+    if (!redirectUser) {
       if (pendingCallbackURL) {
         window.sessionStorage.removeItem(googleRedirectCallbackKey);
         return {
@@ -217,11 +236,11 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
       return {};
     }
 
-    await syncFirebaseUser(credential.user);
+    await syncFirebaseUser(redirectUser);
     const callbackURL = pendingCallbackURL || "/dashboard";
     window.sessionStorage.removeItem(googleRedirectCallbackKey);
     window.location.assign(callbackURL);
-    return { data: toSession(credential.user) };
+    return { data: toSession(redirectUser) };
   } catch (error) {
     window.sessionStorage.removeItem(googleRedirectCallbackKey);
     return { error: toAuthError(error) };
