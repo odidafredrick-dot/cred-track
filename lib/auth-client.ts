@@ -109,7 +109,7 @@ function toAuthError(error: unknown) {
   };
 }
 
-function waitForCurrentUser(timeoutMs = 3000) {
+function waitForCurrentUser(timeoutMs = 10000) {
   if (firebaseAuth.currentUser) {
     return Promise.resolve(firebaseAuth.currentUser);
   }
@@ -224,15 +224,6 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
       credential?.user || (pendingCallbackURL ? await waitForCurrentUser() : null);
 
     if (!redirectUser) {
-      if (pendingCallbackURL) {
-        window.sessionStorage.removeItem(googleRedirectCallbackKey);
-        return {
-          error: {
-            message: "Google sign-in did not complete. Please try again.",
-          },
-        };
-      }
-
       return {};
     }
 

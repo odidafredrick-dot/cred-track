@@ -8,6 +8,7 @@ import {
   authRedirectErrorEvent,
   authRedirectErrorKey,
   signIn,
+  useSession,
 } from "@/lib/auth-client";
 import { roleLabels, type UserRole } from "@/lib/user-profile";
 
@@ -37,6 +38,7 @@ const selectedRoleStorageKey = "holwa:selected-role";
 
 export default function LoginPage() {
   const router = useRouter();
+  const sessionResult = useSession();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -73,6 +75,14 @@ export default function LoginPage() {
       window.removeEventListener(authRedirectErrorEvent, handleRedirectError);
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionResult.data?.user) {
+      window.sessionStorage.removeItem(authRedirectErrorKey);
+      setError("");
+      router.replace("/dashboard");
+    }
+  }, [router, sessionResult.data?.user]);
 
   const rememberSelectedRole = (role = selectedRole) => {
     if (role) {
