@@ -102,6 +102,8 @@ type InboxItem = {
   variant: "info" | "warning";
 };
 
+type MobileTab = "analytics" | "creditors" | "network" | "inbox" | "profile";
+
 type SupplierProfile = UserProfile;
 
 type SupplierCustomerStockItem = {
@@ -205,6 +207,71 @@ function getGroupStatus(records: CreditRecord[]): CreditRecord["status"] {
   return "PENDING";
 }
 
+function MobileTabIcon({ tab }: { tab: MobileTab }) {
+  const common = {
+    className: "h-5 w-5",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  if (tab === "analytics") {
+    return (
+      <svg {...common}>
+        <path d="M4 19V5" />
+        <path d="M4 19h16" />
+        <path d="M8 16V9" />
+        <path d="M12 16V7" />
+        <path d="M16 16v-5" />
+      </svg>
+    );
+  }
+
+  if (tab === "creditors") {
+    return (
+      <svg {...common}>
+        <path d="M8 6h12" />
+        <path d="M8 12h12" />
+        <path d="M8 18h12" />
+        <path d="M4 6h.01" />
+        <path d="M4 12h.01" />
+        <path d="M4 18h.01" />
+      </svg>
+    );
+  }
+
+  if (tab === "network") {
+    return (
+      <svg {...common}>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    );
+  }
+
+  if (tab === "inbox") {
+    return (
+      <svg {...common}>
+        <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M20 21a8 8 0 1 0-16 0" />
+    </svg>
+  );
+}
+
 function toProfileForm(profile: UserProfile): ProfileForm {
   return {
     businessName: profile.businessName || "",
@@ -283,6 +350,8 @@ export default function DashboardPage() {
     useState<ProfileForm>(emptyProfileForm);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeMobileTab, setActiveMobileTab] =
+    useState<MobileTab>("analytics");
   const [isSuppliersDrawerOpen, setIsSuppliersDrawerOpen] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState("");
   const [suppliers, setSuppliers] = useState<SupplierProfile[]>([]);
@@ -309,6 +378,14 @@ export default function DashboardPage() {
   const displayAccountName =
     userProfile?.businessName || session?.user?.name || session?.user?.email || "Holwa user";
   const displayInitial = displayAccountName.charAt(0).toUpperCase();
+  const mobileNetworkLabel = isSupplierDashboard ? "Customers" : "Suppliers";
+  const mobileTabs: Array<{ id: MobileTab; label: string }> = [
+    { id: "analytics", label: "Home" },
+    { id: "creditors", label: "Creditors" },
+    { id: "network", label: mobileNetworkLabel },
+    { id: "inbox", label: "Inbox" },
+    { id: "profile", label: "Profile" },
+  ];
   const canDismissProfileDialog = userProfile
     ? hasBusinessProfileDetails(userProfile)
     : false;
@@ -1217,8 +1294,7 @@ export default function DashboardPage() {
     }));
   };
 
-  const openSuppliersDrawer = async () => {
-    setIsSuppliersDrawerOpen(true);
+  const loadSuppliers = async () => {
     setIsSuppliersLoading(true);
 
     try {
@@ -1241,12 +1317,16 @@ export default function DashboardPage() {
     }
   };
 
-  const openCustomersDrawer = async () => {
+  const openSuppliersDrawer = async () => {
+    setIsSuppliersDrawerOpen(true);
+    await loadSuppliers();
+  };
+
+  const loadCustomers = async () => {
     if (!session?.user?.id) {
       return;
     }
 
-    setIsCustomersDrawerOpen(true);
     setIsCustomersLoading(true);
 
     try {
@@ -1270,6 +1350,24 @@ export default function DashboardPage() {
       });
     } finally {
       setIsCustomersLoading(false);
+    }
+  };
+
+  const openCustomersDrawer = async () => {
+    setIsCustomersDrawerOpen(true);
+    await loadCustomers();
+  };
+
+  const handleMobileTabChange = (tab: MobileTab) => {
+    setActiveMobileTab(tab);
+
+    if (tab === "network") {
+      if (isBusinessDashboard) {
+        void loadSuppliers();
+      }
+      if (isSupplierDashboard) {
+        void loadCustomers();
+      }
     }
   };
 
@@ -1402,7 +1500,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
+      <nav className="hidden bg-white shadow-sm md:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1666,7 +1764,423 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <main className="space-y-5 px-4 pb-28 pt-5 md:hidden">
+        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Image src="/logo.jpeg" alt="Holwa logo" width={28} height={28} />
+                <h1 className="text-xl font-bold text-blue-700">Holwa</h1>
+              </div>
+              <p className="mt-2 truncate text-sm font-semibold text-gray-900">
+                {displayAccountName}
+              </p>
+              {userProfile ? (
+                <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                  {roleLabels[userProfile.role]}
+                </span>
+              ) : null}
+            </div>
+            {profileImage ? (
+              <img
+                src={profileImage}
+                alt=""
+                className="h-12 w-12 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-700 text-base font-semibold text-white">
+                {displayInitial}
+              </span>
+            )}
+          </div>
+        </section>
+
+        {activeMobileTab === "analytics" ? (
+          <>
+            <section className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Money owed</p>
+                <p className="mt-2 text-xl font-semibold text-gray-900">
+                  {formatMoney(totalOwed)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Stock value</p>
+                <p className="mt-2 text-xl font-semibold text-gray-900">
+                  {formatMoney(stockValue)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Reminders</p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <p className="text-xl font-semibold text-gray-900">
+                    {reminderBalance}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsTopupOpen(true)}
+                    className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    Recharge
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Due today</p>
+                <p className="mt-2 text-xl font-semibold text-gray-900">
+                  {dueTodayCount}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Overdue</p>
+                <p className="mt-2 text-xl font-semibold text-gray-900">
+                  {overdueCount}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+                <p className="text-xs font-medium text-gray-500">Actions</p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendAllDueToday}
+                    disabled={dueTodayCount === 0}
+                    className="rounded-lg border border-blue-200 px-2 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50"
+                  >
+                    Due
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendOverdue}
+                    disabled={overdueCount === 0}
+                    className="rounded-lg border border-blue-200 px-2 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50"
+                  >
+                    Overdue
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+              <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-4">
+                <h2 className="text-base font-semibold text-gray-900">
+                  {isSupplierDashboard ? "In Store" : "Stock items"}
+                </h2>
+                <button
+                  type="button"
+                  onClick={openAddStockDialog}
+                  className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  {isSupplierDashboard ? "Add item" : "Add stock"}
+                </button>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {stockItems.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-gray-500">
+                    No stock items added yet.
+                  </div>
+                ) : (
+                  stockItems.map((item) => (
+                    <div key={item.id} className="space-y-3 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {item.product}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-500">
+                            {isSupplierDashboard
+                              ? formatMoney(Number(item.sellingPrice))
+                              : `Qty ${item.quantity}`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            isSupplierDashboard
+                              ? openEditStockDialog(item)
+                              : setSelectedStock(item)
+                          }
+                          className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700"
+                        >
+                          {isSupplierDashboard ? "Edit" : "View"}
+                        </button>
+                      </div>
+                      {isSupplierDashboard ? (
+                        <p className="text-sm text-gray-500">
+                          {item.offers || "No offer added"}
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleNotifySupplier(item.id)}
+                          className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                        >
+                          Notify supplier
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {activeMobileTab === "creditors" ? (
+          <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+            <div className="space-y-3 border-b border-gray-100 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-gray-900">
+                  Creditors
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  Add credit
+                </button>
+              </div>
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search customers"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <div className="divide-y divide-gray-100">
+              {paginatedCustomerGroups.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  No creditors found.
+                </div>
+              ) : (
+                paginatedCustomerGroups.map((group) => (
+                  <button
+                    type="button"
+                    key={group.key}
+                    onClick={() => setSelectedCustomerKey(group.key)}
+                    className="w-full px-4 py-4 text-left"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {group.name}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {group.phone}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {formatMoney(group.totalUnpaid)}
+                      </p>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-gray-500">
+                      <span>{group.unpaidCredits.length} credits</span>
+                      <span>{totalItemQuantity(group.unpaidItems)} items</span>
+                      <span>{statusLabels[group.status]}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeMobileTab === "network" ? (
+          <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+            <div className="space-y-3 border-b border-gray-100 px-4 py-4">
+              <h2 className="text-base font-semibold text-gray-900">
+                {mobileNetworkLabel}
+              </h2>
+              {isBusinessDashboard ? (
+                <input
+                  type="search"
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                  placeholder="Search supplier or location"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              ) : null}
+            </div>
+            <div className="divide-y divide-gray-100">
+              {isBusinessDashboard ? (
+                isSuppliersLoading ? (
+                  <div className="px-4 py-6 text-sm text-gray-500">
+                    Loading suppliers...
+                  </div>
+                ) : filteredSuppliers.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-gray-500">
+                    No suppliers found.
+                  </div>
+                ) : (
+                  filteredSuppliers.map((supplier) => (
+                    <button
+                      type="button"
+                      key={supplier.id}
+                      onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                      className="w-full px-4 py-4 text-left"
+                    >
+                      <p className="font-semibold text-gray-900">
+                        {supplier.businessName}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {[supplier.county, supplier.town, supplier.estate]
+                          .filter(Boolean)
+                          .join(", ") || "Location not added"}
+                      </p>
+                    </button>
+                  ))
+                )
+              ) : isCustomersLoading ? (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  Loading customers...
+                </div>
+              ) : supplierCustomers.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  No business customers yet.
+                </div>
+              ) : (
+                supplierCustomers.map((customer) => (
+                  <div key={customer.profile.userId} className="px-4 py-4">
+                    <p className="font-semibold text-gray-900">
+                      {customer.profile.businessName || "Business"}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {[
+                        customer.profile.county,
+                        customer.profile.town,
+                        customer.profile.estate,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "Location not added"}
+                    </p>
+                    <p className="mt-2 text-xs text-blue-700">
+                      Last order{" "}
+                      {customer.lastOrderAt
+                        ? formatDate(customer.lastOrderAt)
+                        : "unknown"}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeMobileTab === "inbox" ? (
+          <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+            <div className="border-b border-gray-100 px-4 py-4">
+              <h2 className="text-base font-semibold text-gray-900">Inbox</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Messages and alerts for your account.
+              </p>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {inboxItems.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  No messages yet.
+                </div>
+              ) : (
+                inboxItems.map((item) => (
+                  <div key={item.id} className="px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {item.title}
+                        </p>
+                        <p className="mt-1 text-sm text-gray-500">{item.body}</p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          item.variant === "warning"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {item.variant === "warning" ? "Action" : "Info"}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeMobileTab === "profile" ? (
+          <section className="space-y-4">
+            <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
+              <div className="flex items-center gap-3">
+                {profileImage ? (
+                  <img
+                    src={profileImage}
+                    alt=""
+                    className="h-14 w-14 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-700 text-lg font-semibold text-white">
+                    {displayInitial}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-lg font-semibold text-gray-900">
+                    {displayAccountName}
+                  </p>
+                  {userProfile ? (
+                    <p className="text-sm font-medium text-blue-700">
+                      {roleLabels[userProfile.role]}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Phone</span>
+                  <span className="font-medium text-gray-900">
+                    {userProfile?.phoneNumber || "Not added"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Location</span>
+                  <span className="text-right font-medium text-gray-900">
+                    {[userProfile?.county, userProfile?.town, userProfile?.estate]
+                      .filter(Boolean)
+                      .join(", ") || "Not added"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Payment</span>
+                  <span className="font-medium text-gray-900">
+                    {userProfile?.paymentMode
+                      ? paymentModeLabels[userProfile.paymentMode]
+                      : "Not added"}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={openProfileDialog}
+                  className="rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Edit profile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => signOut()}
+                  className="rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-700"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+      </main>
+
+      <main className="mx-auto hidden max-w-7xl px-4 py-8 sm:px-6 lg:px-8 md:block md:space-y-6">
         <div className="grid gap-6 md:grid-cols-4">
           <div className="bg-white rounded-lg shadow p-6">
             <p className="text-sm text-gray-500">Total money owed</p>
@@ -1966,6 +2480,35 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          {mobileTabs.map((tab) => {
+            const isActive = activeMobileTab === tab.id;
+
+            return (
+              <button
+                type="button"
+                key={tab.id}
+                onClick={() => handleMobileTabChange(tab.id)}
+                className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold transition ${
+                  isActive
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                }`}
+              >
+                <MobileTabIcon tab={tab.id} />
+                <span className="max-w-full truncate">{tab.label}</span>
+                {tab.id === "inbox" && inboxItems.length > 0 ? (
+                  <span className="absolute right-3 top-1 rounded-full bg-blue-700 px-1.5 py-0.5 text-[10px] leading-none text-white">
+                    {inboxItems.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {isProfileDialogOpen && pendingProfileRole ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
