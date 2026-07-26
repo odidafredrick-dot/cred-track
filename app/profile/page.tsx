@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signOut, useSession } from "@/lib/auth-client";
+import { hasPendingAuthRedirect, signOut, useSession } from "@/lib/auth-client";
 import {
   isUserRole,
   needsBusinessProfile,
@@ -103,6 +103,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!isPending && !session) {
+      if (hasPendingAuthRedirect()) {
+        return;
+      }
+
       router.push("/");
     }
   }, [isPending, router, session]);

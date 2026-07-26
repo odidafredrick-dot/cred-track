@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   authRedirectErrorEvent,
   authRedirectErrorKey,
+  hasPendingAuthRedirect,
   signIn,
   useSession,
 } from "@/lib/auth-client";
@@ -78,6 +79,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (sessionResult.data?.user) {
+      if (hasPendingAuthRedirect()) {
+        return;
+      }
+
       window.sessionStorage.removeItem(authRedirectErrorKey);
       setError("");
       router.replace("/dashboard");

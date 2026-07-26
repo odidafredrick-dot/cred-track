@@ -293,6 +293,16 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
       credential?.user || (pendingCallbackURL ? await waitForCurrentUser() : null);
 
     if (!redirectUser) {
+      if (pendingCallbackURL) {
+        clearStoredRedirectCallback();
+        return {
+          error: {
+            message:
+              "Google sign-in returned without an account. Please try again.",
+          },
+        };
+      }
+
       return {};
     }
 

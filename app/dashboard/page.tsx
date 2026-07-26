@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession, signOut } from "@/lib/auth-client";
+import { hasPendingAuthRedirect, useSession, signOut } from "@/lib/auth-client";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -392,6 +392,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isPending && !session) {
+      if (hasPendingAuthRedirect()) {
+        return;
+      }
+
       router.push("/");
     }
   }, [session, isPending, router]);
