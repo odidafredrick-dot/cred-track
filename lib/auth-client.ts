@@ -6,6 +6,8 @@ import {
   createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
@@ -109,7 +111,28 @@ function toAuthError(error: unknown) {
   };
 }
 
-function waitForCurrentUser(timeoutMs = 10000) {
+function getStoredRedirectCallback() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return (
+    window.sessionStorage.getItem(googleRedirectCallbackKey) ||
+    window.localStorage.getItem(googleRedirectCallbackKey)
+  );
+}
+
+function setStoredRedirectCallback(callbackURL: string) {
+  window.sessionStorage.setItem(googleRedirectCallbackKey, callbackURL);
+  window.localStorage.setItem(googleRedirectCallbackKey, callbackURL);
+}
+
+function clearStoredRedirectCallback() {
+  window.sessionStorage.removeItem(googleRedirectCallbackKey);
+  window.localStorage.removeItem(googleRedirectCallbackKey);
+}
+
+function waitForCurrentUser(timeoutMs = 20000) {
   if (firebaseAuth.currentUser) {
     return Promise.resolve(firebaseAuth.currentUser);
   }
@@ -163,9 +186,10 @@ export const signIn = {
       }
 
       const googleProvider = createGoogleProvider();
+      await setPersistence(firebaseAuth, browserLocalPersistence);
 
       if (shouldUseRedirectSignIn()) {
-        window.sessionStorage.setItem(googleRedirectCallbackKey, callbackURL);
+        setStoredRedirectCallback(callbackURL);
         await signInWithRedirect(firebaseAuth, googleProvider);
         return {};
       }
@@ -217,9 +241,7 @@ export async function signOut() {
 export async function handleAuthRedirectResult(): Promise<AuthResult> {
   try {
     const credential = await getRedirectResult(firebaseAuth);
-    const pendingCallbackURL = window.sessionStorage.getItem(
-      googleRedirectCallbackKey
-    );
+    const pendingCallbackURL = getStoredRedirectCallback();
     const redirectUser =
       credential?.user || (pendingCallbackURL ? await waitForCurrentUser() : null);
 
@@ -229,11 +251,11 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
 
     await syncFirebaseUser(redirectUser);
     const callbackURL = pendingCallbackURL || "/dashboard";
-    window.sessionStorage.removeItem(googleRedirectCallbackKey);
+    clearStoredRedirectCallback();
     window.location.assign(callbackURL);
     return { data: toSession(redirectUser) };
   } catch (error) {
-    window.sessionStorage.removeItem(googleRedirectCallbackKey);
+    clearStoredRedirectCallback();
     return { error: toAuthError(error) };
   }
 }
@@ -244,6 +266,17 @@ export function useSession() {
 
   useEffect(() => {
     return onAuthStateChanged(firebaseAuth, async (user) => {
+      const pendingCallbackURL = getStoredRedirectCallback();
+      const resolvedUser =
+        user || (pendingCallbackURL ? await waitForCurrentUser() : null);
+
+      if (resolvedUser) {
+        await syncFirebaseUser(resolvedUser);
+        setData(toSession(resolvedUser));
+        setIsPending(false);
+        return;
+      }
+
       if (user) {
         await syncFirebaseUser(user);
         setData(toSession(user));
