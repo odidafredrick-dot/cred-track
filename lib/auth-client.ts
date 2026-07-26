@@ -34,6 +34,7 @@ type AuthResult = {
 };
 
 const googleRedirectCallbackKey = "holwa:google-redirect-callback";
+const selectedRoleStorageKey = "holwa:selected-role";
 export const authRedirectErrorKey = "holwa:auth-redirect-error";
 export const authRedirectErrorEvent = "holwa:auth-redirect-error";
 
@@ -69,7 +70,7 @@ function toSession(user: FirebaseUser): Session {
 }
 
 async function syncFirebaseUser(user: FirebaseUser) {
-  await fetch("/api/firebase-user", {
+  const response = await fetch("/api/firebase-user", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -79,6 +80,10 @@ async function syncFirebaseUser(user: FirebaseUser) {
       image: user.photoURL,
     }),
   });
+
+  if (!response.ok) {
+    throw new Error("Could not sync your account. Please try again.");
+  }
 }
 
 function toAuthError(error: unknown) {
@@ -130,6 +135,47 @@ function setStoredRedirectCallback(callbackURL: string) {
 function clearStoredRedirectCallback() {
   window.sessionStorage.removeItem(googleRedirectCallbackKey);
   window.localStorage.removeItem(googleRedirectCallbackKey);
+}
+
+export function hasPendingAuthRedirect() {
+  return Boolean(getStoredRedirectCallback());
+}
+
+async function resolvePostAuthURL(user: FirebaseUser, fallbackURL = "/dashboard") {
+  const profileResponse = await fetch(`/api/profile?userId=${user.uid}`);
+
+  if (!profileResponse.ok) {
+    return fallbackURL;
+  }
+
+  const data = (await profileResponse.json()) as {
+    profile?: { role?: string } | null;
+  };
+
+  if (data.profile) {
+    window.localStorage.removeItem(selectedRoleStorageKey);
+    return "/dashboard";
+  }
+
+  const selectedRole = window.localStorage.getItem(selectedRoleStorageKey);
+
+  if (selectedRole === "INDIVIDUAL") {
+    const saveResponse = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.uid,
+        role: selectedRole,
+      }),
+    });
+
+    if (saveResponse.ok) {
+      window.localStorage.removeItem(selectedRoleStorageKey);
+      return "/dashboard";
+    }
+  }
+
+  return "/profile?setup=1";
 }
 
 function waitForCurrentUser(timeoutMs = 20000) {
@@ -196,7 +242,8 @@ export const signIn = {
 
       const credential = await signInWithPopup(firebaseAuth, googleProvider);
       await syncFirebaseUser(credential.user);
-      window.location.assign(callbackURL);
+      const postAuthURL = await resolvePostAuthURL(credential.user, callbackURL);
+      window.location.assign(postAuthURL);
       return { data: toSession(credential.user) };
     } catch (error) {
       return { error: toAuthError(error) };
@@ -251,8 +298,9 @@ export async function handleAuthRedirectResult(): Promise<AuthResult> {
 
     await syncFirebaseUser(redirectUser);
     const callbackURL = pendingCallbackURL || "/dashboard";
+    const postAuthURL = await resolvePostAuthURL(redirectUser, callbackURL);
     clearStoredRedirectCallback();
-    window.location.assign(callbackURL);
+    window.location.assign(postAuthURL);
     return { data: toSession(redirectUser) };
   } catch (error) {
     clearStoredRedirectCallback();
@@ -271,14 +319,23 @@ export function useSession() {
         user || (pendingCallbackURL ? await waitForCurrentUser() : null);
 
       if (resolvedUser) {
-        await syncFirebaseUser(resolvedUser);
+        try {
+          await syncFirebaseUser(resolvedUser);
+        } catch {
+          // Keep the Firebase session visible while the explicit sign-in flow
+          // shows the sync error to the user.
+        }
         setData(toSession(resolvedUser));
         setIsPending(false);
         return;
       }
 
       if (user) {
-        await syncFirebaseUser(user);
+        try {
+          await syncFirebaseUser(user);
+        } catch {
+          // Avoid leaving the app permanently loading on a transient API error.
+        }
         setData(toSession(user));
       } else {
         setData(null);
