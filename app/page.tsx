@@ -185,6 +185,12 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {error && !selectedRole ? (
+            <div className="mt-6 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             {roleOptions.map((option) => (
               <button

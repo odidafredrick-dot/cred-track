@@ -80,9 +80,32 @@ async function syncFirebaseUser(user: FirebaseUser) {
 }
 
 function toAuthError(error: unknown) {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+
+  const friendlyMessages: Record<string, string> = {
+    "auth/unauthorized-domain":
+      "This app domain is not authorized for Google sign-in. Please contact support.",
+    "auth/network-request-failed":
+      "Network error while signing in. Check your connection and try again.",
+    "auth/popup-closed-by-user": "Google sign-in was closed before it finished.",
+    "auth/cancelled-popup-request":
+      "Google sign-in was cancelled. Please try again.",
+    "auth/user-disabled": "This account has been disabled.",
+    "auth/invalid-credential":
+      "The login details are incorrect or expired. Please try again.",
+    "auth/invalid-email": "Enter a valid email or phone login.",
+    "auth/wrong-password": "Incorrect password. Please try again.",
+  };
+
   return {
     message:
-      error instanceof Error ? error.message : "Authentication failed. Try again.",
+      friendlyMessages[code] ||
+      (error instanceof Error
+        ? error.message
+        : "Authentication failed. Try again."),
   };
 }
 
@@ -123,7 +146,11 @@ export const signIn = {
       if (shouldUseRedirectSignIn()) {
         window.sessionStorage.setItem(googleRedirectCallbackKey, callbackURL);
         await signInWithRedirect(firebaseAuth, googleProvider);
-        return {};
+        return {
+          error: {
+            message: "Google sign-in did not open. Please try again.",
+          },
+        };
       }
 
       const credential = await signInWithPopup(firebaseAuth, googleProvider);
@@ -173,14 +200,25 @@ export async function signOut() {
 export async function handleAuthRedirectResult(): Promise<AuthResult> {
   try {
     const credential = await getRedirectResult(firebaseAuth);
+    const pendingCallbackURL = window.sessionStorage.getItem(
+      googleRedirectCallbackKey
+    );
 
     if (!credential?.user) {
+      if (pendingCallbackURL) {
+        window.sessionStorage.removeItem(googleRedirectCallbackKey);
+        return {
+          error: {
+            message: "Google sign-in did not complete. Please try again.",
+          },
+        };
+      }
+
       return {};
     }
 
     await syncFirebaseUser(credential.user);
-    const callbackURL =
-      window.sessionStorage.getItem(googleRedirectCallbackKey) || "/dashboard";
+    const callbackURL = pendingCallbackURL || "/dashboard";
     window.sessionStorage.removeItem(googleRedirectCallbackKey);
     window.location.assign(callbackURL);
     return { data: toSession(credential.user) };
