@@ -87,10 +87,7 @@ async function syncFirebaseUser(user: FirebaseUser) {
 }
 
 function toAuthError(error: unknown) {
-  const code =
-    error && typeof error === "object" && "code" in error
-      ? String((error as { code?: unknown }).code)
-      : "";
+  const code = getAuthErrorCode(error);
 
   const friendlyMessages: Record<string, string> = {
     "auth/argument-error":
@@ -99,6 +96,8 @@ function toAuthError(error: unknown) {
       "This app domain is not authorized for Google sign-in. Please contact support.",
     "auth/network-request-failed":
       "Network error while signing in. Check your connection and try again.",
+    "auth/popup-blocked":
+      "Google sign-in was blocked. Please try again.",
     "auth/popup-closed-by-user": "Google sign-in was closed before it finished.",
     "auth/cancelled-popup-request":
       "Google sign-in was cancelled. Please try again.",
@@ -116,6 +115,14 @@ function toAuthError(error: unknown) {
         ? error.message
         : "Authentication failed. Try again."),
   };
+}
+
+function getAuthErrorCode(error: unknown) {
+  return (
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : ""
+  );
 }
 
 function getStoredRedirectCallback() {
@@ -238,15 +245,27 @@ export const signIn = {
       }
 
       const googleProvider = createGoogleProvider();
-      await setPersistence(firebaseAuth, browserLocalPersistence);
+      let credential;
 
-      if (shouldUseRedirectSignIn()) {
+      try {
+        credential = await signInWithPopup(firebaseAuth, googleProvider);
+      } catch (popupError) {
+        const code = getAuthErrorCode(popupError);
+        const canFallBackToRedirect =
+          shouldUseRedirectSignIn() &&
+          (code === "auth/popup-blocked" ||
+            code === "auth/operation-not-supported-in-this-environment");
+
+        if (!canFallBackToRedirect) {
+          throw popupError;
+        }
+
+        await setPersistence(firebaseAuth, browserLocalPersistence);
         setStoredRedirectCallback(callbackURL);
         await signInWithRedirect(firebaseAuth, googleProvider);
         return {};
       }
 
-      const credential = await signInWithPopup(firebaseAuth, googleProvider);
       await syncFirebaseUser(credential.user);
       const postAuthURL = await resolvePostAuthURL(credential.user, callbackURL);
       window.location.assign(postAuthURL);
