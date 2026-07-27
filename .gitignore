@@ -31,6 +31,8 @@ yarn-error.log*
 
 # vercel
 .vercel
+.vercel-xdg/
+.npm-cache/
 
 # typescript
 *.tsbuildinfo
@@ -46,3 +48,5 @@ next-env.d.ts
 /Holwa-twa.apk
 /Holwa-twa.aab
 /android-twa/
+
+.env*

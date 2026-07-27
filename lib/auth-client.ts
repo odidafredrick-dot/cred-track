@@ -93,6 +93,8 @@ function toAuthError(error: unknown) {
       : "";
 
   const friendlyMessages: Record<string, string> = {
+    "auth/argument-error":
+      "Check the phone number and password, then try again.",
     "auth/unauthorized-domain":
       "This app domain is not authorized for Google sign-in. Please contact support.",
     "auth/network-request-failed":
@@ -208,6 +210,10 @@ export const signIn = {
     password: string;
   }): Promise<AuthResult> => {
     try {
+      if (!email.trim() || !password.trim()) {
+        throw new Error("Enter your phone number and password.");
+      }
+
       const credential = await signInWithEmailAndPassword(
         firebaseAuth,
         email,
@@ -262,6 +268,10 @@ export const signUp = {
     name?: string;
   }): Promise<AuthResult> => {
     try {
+      if (!email.trim() || !password.trim()) {
+        throw new Error("Enter your email and password.");
+      }
+
       const credential = await createUserWithEmailAndPassword(
         firebaseAuth,
         email,
