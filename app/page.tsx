@@ -118,8 +118,13 @@ export default function LoginPage() {
     }
 
     const normalized = normalizePhone(phone);
-    if (!normalized.startsWith("+") || normalized.length < 10) {
-      setError("Enter a valid phone number starting with +.");
+    const digits = normalized.replace(/\D/g, "");
+    if (
+      !normalized.startsWith("+") ||
+      digits.length < 10 ||
+      /[^\d+]/.test(normalized)
+    ) {
+      setError("Enter a valid phone number using digits only, starting with +.");
       return;
     }
 
