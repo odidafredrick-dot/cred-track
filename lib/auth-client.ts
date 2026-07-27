@@ -94,7 +94,7 @@ function toAuthError(error: unknown) {
 
   const friendlyMessages: Record<string, string> = {
     "auth/argument-error":
-      "Check the phone number and password, then try again.",
+      "Google sign-in could not start. Please close the app and try again.",
     "auth/unauthorized-domain":
       "This app domain is not authorized for Google sign-in. Please contact support.",
     "auth/network-request-failed":

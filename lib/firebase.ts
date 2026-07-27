@@ -1,11 +1,7 @@
 "use client";
 
 import { getApp, getApps, initializeApp } from "firebase/app";
-import {
-  browserLocalPersistence,
-  getAuth,
-  initializeAuth,
-} from "firebase/auth";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -19,14 +15,4 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-function getFirebaseAuth() {
-  try {
-    return initializeAuth(app, {
-      persistence: browserLocalPersistence,
-    });
-  } catch {
-    return getAuth(app);
-  }
-}
-
-export const firebaseAuth = getFirebaseAuth();
+export const firebaseAuth = getAuth(app);
