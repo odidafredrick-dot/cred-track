@@ -142,36 +142,36 @@ function buildRecommendation(
   suggestedLimit: number
 ) {
   if (riskLevel === "NO_HISTORY") {
-    return "No Holwa network score yet. Start with cash or a small first credit.";
+    return "No Holwa trade history yet. Start with upfront payment or a small first goods/services order.";
   }
 
   if (riskLevel === "LIMITED_HISTORY") {
-    return `Limited Holwa history. Review carefully and keep credit near ${formatMoney(
+    return `Limited Holwa trade history. Review carefully and keep goods/services credit near ${formatMoney(
       suggestedLimit
     )}.`;
   }
 
   if (riskLevel === "EXCELLENT" || riskLevel === "LOW_RISK") {
-    return `Safe to extend credit up to ${formatMoney(suggestedLimit)}.`;
+    return `Safe to extend goods/services credit up to ${formatMoney(suggestedLimit)}.`;
   }
 
   if (riskLevel === "MODERATE_RISK") {
-    return `Review carefully before extending credit above ${formatMoney(
+    return `Review carefully before extending goods/services credit above ${formatMoney(
       suggestedLimit
     )}.`;
   }
 
   if (riskLevel === "HIGH_RISK") {
-    return `High risk. Use upfront payment or a small limit near ${formatMoney(
+    return `High risk. Use upfront payment or keep goods/services credit near ${formatMoney(
       suggestedLimit
     )}.`;
   }
 
   if (riskLevel === "VERY_HIGH_RISK") {
-    return "Very high risk. Avoid new credit unless secured by upfront payment.";
+    return "Very high risk. Avoid goods/services credit unless secured by upfront payment.";
   }
 
-  return "Do not extend credit based on current Holwa network history.";
+  return "Do not extend goods/services credit based on current Holwa trade history.";
 }
 
 export function calculateHolwaRiskScore(

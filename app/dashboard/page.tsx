@@ -237,7 +237,7 @@ function RiskSummaryCard({ result }: { result: RiskScoreResult }) {
   return (
     <div className={`rounded-lg border p-4 ${tone.card}`}>
       <p className="text-xs font-semibold uppercase">
-        Holwa Network Score
+        Holwa Trade Score
       </p>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -3180,7 +3180,7 @@ export default function DashboardPage() {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800">
-                Check Holwa Network Score
+                Check Holwa Trade Score
               </h3>
               <button
                 onClick={() => setIsRiskDialogOpen(false)}
@@ -3192,7 +3192,7 @@ export default function DashboardPage() {
             <form className="mt-4 space-y-4" onSubmit={handleCheckRisk}>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Debtor phone number
+                  Customer phone number
                 </label>
                 <input
                   type="tel"
@@ -3213,7 +3213,7 @@ export default function DashboardPage() {
                 disabled={isRiskChecking}
                 className="inline-flex w-full items-center justify-center rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-200"
               >
-                {isRiskChecking ? "Checking..." : "Check Score"}
+                {isRiskChecking ? "Checking..." : "Check Trade Score"}
               </button>
             </form>
             {riskResult ? (
@@ -3486,10 +3486,10 @@ export default function DashboardPage() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold">
-                        Holwa Network Score
+                        Holwa Trade Score
                       </p>
                       <p className="mt-1 text-sm text-blue-700">
-                        Check the network score for this debtor.
+                        Check the trade score for this customer.
                       </p>
                     </div>
                     <button
