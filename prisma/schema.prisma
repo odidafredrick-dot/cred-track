@@ -151,6 +151,7 @@ model Credit {
 
   customer Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   items    CreditItem[]
+  payments CreditPayment[]
 
   @@index([userId])
   @@index([customerId])
@@ -186,6 +187,18 @@ model CreditItem {
   createdAt DateTime @default(now())
 
   credit Credit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+}
+
+model CreditPayment {
+  id        String   @id @default(cuid())
+  creditId  String
+  amount    Decimal  @db.Decimal(10, 2)
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+
+  credit Credit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+
+  @@index([creditId])
 }
 
 model HolwaRiskScoreSnapshot {

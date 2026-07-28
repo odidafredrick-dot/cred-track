@@ -24,6 +24,13 @@ type CreditItem = {
   total: number;
 };
 
+type CreditPayment = {
+  id: string;
+  amount: number;
+  note?: string | null;
+  createdAt: string;
+};
+
 type CustomerInfo = {
   id: string;
   name: string;
@@ -49,6 +56,7 @@ type CreditRecord = {
   createdAt: string;
   customer?: CustomerInfo;
   items: CreditItem[];
+  payments?: CreditPayment[];
 };
 
 type CustomerCreditGroup = {
@@ -418,6 +426,11 @@ export default function DashboardPage() {
   const [stockReduceAmounts, setStockReduceAmounts] = useState<
     Record<string, string>
   >({});
+  const [paymentCredit, setPaymentCredit] = useState<CreditRecord | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockItem | null>(null);
   const [stockEditingItem, setStockEditingItem] = useState<StockItem | null>(
     null
@@ -1144,6 +1157,60 @@ export default function DashboardPage() {
         record.id === recordId ? data.credit : record
       )
     );
+  };
+
+  const openPaymentDialog = (record: CreditRecord) => {
+    setPaymentCredit(record);
+    setPaymentAmount("");
+    setPaymentNote("");
+    setPaymentError("");
+  };
+
+  const handleRecordPayment = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!paymentCredit) {
+      return;
+    }
+
+    const amount = Number(paymentAmount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("Enter a payment amount greater than zero.");
+      return;
+    }
+
+    setPaymentError("");
+    setIsPaymentSubmitting(true);
+
+    try {
+      const response = await fetch(`/api/credits/${paymentCredit.id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          note: paymentNote,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        credit?: CreditRecord;
+      };
+
+      if (!response.ok || !data.credit) {
+        setPaymentError(data.error || "Failed to record payment.");
+        return;
+      }
+
+      setCredits((prev) =>
+        prev.map((record) =>
+          record.id === data.credit!.id ? data.credit! : record
+        )
+      );
+      setPaymentCredit(null);
+      setToast({ message: "Payment recorded.", variant: "success" });
+    } finally {
+      setIsPaymentSubmitting(false);
+    }
   };
 
   const handleDeleteCredit = async (recordId: string) => {
@@ -3549,9 +3616,21 @@ export default function DashboardPage() {
                 <div className="divide-y">
                   {selectedCustomerGroup.credits.map((record) => (
                     <div key={record.id} className="space-y-3 px-3 py-3">
-                      <div className="grid gap-3 md:grid-cols-4">
+                      <div className="grid gap-3 md:grid-cols-6">
                         <div>
-                          <p className="text-xs text-gray-500">Amount owed</p>
+                          <p className="text-xs text-gray-500">Total</p>
+                          <p className="font-medium">
+                            {formatMoney(Number(record.totalAmount))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Paid</p>
+                          <p className="font-medium">
+                            {formatMoney(Number(record.amountPaid))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Balance</p>
                           <p className="font-medium">
                             {formatMoney(amountOwed(record))}
                           </p>
@@ -3594,6 +3673,13 @@ export default function DashboardPage() {
                         </select>
                         <div className="flex flex-wrap gap-2">
                           <button
+                            onClick={() => openPaymentDialog(record)}
+                            disabled={!isUnpaid(record)}
+                            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Record payment
+                          </button>
+                          <button
                             onClick={() => handleRemind(record.id)}
                             disabled={!isUnpaid(record)}
                             className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3606,6 +3692,33 @@ export default function DashboardPage() {
                           >
                             Delete
                           </button>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
+                        <p className="text-xs uppercase text-gray-400">
+                          Payment history
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {record.payments?.length ? (
+                            record.payments.map((payment) => (
+                              <div
+                                key={payment.id}
+                                className="flex flex-col gap-1 text-sm text-gray-700 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <span className="font-medium">
+                                  {formatMoney(Number(payment.amount))}
+                                </span>
+                                <span className="text-gray-500">
+                                  {formatDate(payment.createdAt)}
+                                  {payment.note ? ` - ${payment.note}` : ""}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-500">
+                              No payments recorded yet.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3621,6 +3734,88 @@ export default function DashboardPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {paymentCredit ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Record Payment
+              </h3>
+              <button
+                onClick={() => setPaymentCredit(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Customer</span>
+                <span className="font-medium text-gray-900">
+                  {paymentCredit.customer?.name || paymentCredit.customerName}
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between gap-3">
+                <span className="text-gray-500">Balance</span>
+                <span className="font-medium text-gray-900">
+                  {formatMoney(amountOwed(paymentCredit))}
+                </span>
+              </div>
+            </div>
+            <form className="mt-4 space-y-4" onSubmit={handleRecordPayment}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Amount received
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={Math.max(1, amountOwed(paymentCredit))}
+                  step="0.01"
+                  value={paymentAmount}
+                  onChange={(event) => setPaymentAmount(event.target.value)}
+                  placeholder="KES"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Note
+                </label>
+                <input
+                  type="text"
+                  value={paymentNote}
+                  onChange={(event) => setPaymentNote(event.target.value)}
+                  placeholder="Optional"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+              {paymentError ? (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {paymentError}
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentCredit(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPaymentSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-200"
+                >
+                  {isPaymentSubmitting ? "Saving..." : "Save payment"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

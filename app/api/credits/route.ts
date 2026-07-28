@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { computeCreditStatus } from "@/lib/credit-status";
 import { normalizePhoneNumber } from "@/lib/phone";
 
 type CreditItemInput = {
@@ -17,37 +18,19 @@ type CreateCreditBody = {
   items: CreditItemInput[];
 };
 
-function normalizeDate(date: Date) {
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-}
-
 function normalizePhone(phone: string) {
   return normalizePhoneNumber(phone);
 }
 
-function computeStatus(
-  currentStatus: string,
-  dueDate: Date
-): "PENDING" | "DUE" | "OVERDUE" | "PARTIALLY_PAID" | "PAID" {
-  if (currentStatus === "PAID" || currentStatus === "PARTIALLY_PAID") {
-    return currentStatus as "PAID" | "PARTIALLY_PAID";
-  }
-
-  const today = normalizeDate(new Date());
-  const due = normalizeDate(dueDate);
-
-  if (due < today) {
-    return "OVERDUE";
-  }
-
-  if (due.getTime() === today.getTime()) {
-    return "DUE";
-  }
-
-  return "PENDING";
-}
+const creditInclude = {
+  customer: true,
+  items: true,
+  payments: {
+    orderBy: {
+      createdAt: "desc" as const,
+    },
+  },
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -65,13 +48,18 @@ export async function GET(request: NextRequest) {
 
   const credits = await prisma.credit.findMany({
     where: { userId },
-    include: { customer: true, items: true },
+    include: creditInclude,
     orderBy: { createdAt: "desc" },
   });
 
   const updates = credits
     .map((credit) => {
-      const updatedStatus = computeStatus(credit.status, credit.dueDate);
+      const updatedStatus = computeCreditStatus({
+        requestedStatus: credit.status,
+        dueDate: credit.dueDate,
+        totalAmount: Number(credit.totalAmount),
+        amountPaid: Number(credit.amountPaid),
+      });
       if (updatedStatus !== credit.status) {
         return prisma.credit.update({
           where: { id: credit.id },
@@ -84,6 +72,13 @@ export async function GET(request: NextRequest) {
 
   if (updates.length) {
     await Promise.all(updates);
+    const refreshedCredits = await prisma.credit.findMany({
+      where: { userId },
+      include: creditInclude,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json({ credits: refreshedCredits, balance: balance.balance });
   }
 
   return NextResponse.json({ credits, balance: balance.balance });
@@ -116,9 +111,17 @@ export async function POST(request: NextRequest) {
     const unitPrice = Number(item.unitPrice || 0);
     return sum + quantity * unitPrice;
   }, 0);
-  const amountPaid = Number(body.amountPaid || 0);
+  const requestedAmountPaid = Number(body.amountPaid || 0);
+  const amountPaid = Math.min(Math.max(0, requestedAmountPaid), totalAmount);
   const customerName = body.customerName.trim();
   const customerPhone = normalizePhone(body.customerPhone);
+  const dueDate = new Date(body.dueDate);
+  const status = computeCreditStatus({
+    requestedStatus: "PENDING",
+    dueDate,
+    totalAmount,
+    amountPaid,
+  });
 
   const credit = await prisma.$transaction(async (tx) => {
     const customer = await tx.customer.upsert({
@@ -142,9 +145,10 @@ export async function POST(request: NextRequest) {
         customerId: customer.id,
         customerName,
         customerPhone,
-        dueDate: new Date(body.dueDate),
+        dueDate,
         totalAmount,
         amountPaid,
+        status,
         items: {
           create: body.items.map((item) => ({
             name: item.name.trim(),
@@ -153,8 +157,17 @@ export async function POST(request: NextRequest) {
             total: item.quantity * item.unitPrice,
           })),
         },
+        payments:
+          amountPaid > 0
+            ? {
+                create: {
+                  amount: amountPaid,
+                  note: "Initial payment",
+                },
+              }
+            : undefined,
       },
-      include: { customer: true, items: true },
+      include: creditInclude,
     });
   });
 
