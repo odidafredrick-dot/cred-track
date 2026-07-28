@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizePhoneNumber } from "@/lib/phone";
 
 type CreditItemInput = {
   name: string;
@@ -23,7 +24,7 @@ function normalizeDate(date: Date) {
 }
 
 function normalizePhone(phone: string) {
-  return phone.trim().replace(/\s+/g, "");
+  return normalizePhoneNumber(phone);
 }
 
 function computeStatus(

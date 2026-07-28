@@ -40,6 +40,17 @@ enum PaymentMode {
   TILL
 }
 
+enum RiskLevel {
+  EXCELLENT
+  LOW_RISK
+  MODERATE_RISK
+  HIGH_RISK
+  VERY_HIGH_RISK
+  DO_NOT_EXTEND
+  LIMITED_HISTORY
+  NO_HISTORY
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -175,6 +186,41 @@ model CreditItem {
   createdAt DateTime @default(now())
 
   credit Credit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+}
+
+model HolwaRiskScoreSnapshot {
+  id             String     @id @default(cuid())
+  debtorPhone    String
+  score          Int?
+  riskLevel      RiskLevel
+  recommendation String     @db.Text
+  suggestedLimit Decimal    @db.Decimal(10, 2) @default(0)
+  creditCount    Int        @default(0)
+  calculatedAt   DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+
+  checks HolwaRiskScoreCheck[]
+
+  @@index([debtorPhone])
+  @@index([calculatedAt])
+}
+
+model HolwaRiskScoreCheck {
+  id              String                  @id @default(cuid())
+  requesterUserId String
+  debtorPhone     String
+  score           Int?
+  riskLevel       RiskLevel
+  recommendation  String                  @db.Text
+  suggestedLimit  Decimal                 @db.Decimal(10, 2) @default(0)
+  snapshotId      String?
+  createdAt       DateTime                @default(now())
+
+  snapshot HolwaRiskScoreSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
+
+  @@index([requesterUserId])
+  @@index([debtorPhone])
+  @@index([createdAt])
 }
 
 model StockItem {

@@ -4,6 +4,8 @@ import { hasPendingAuthRedirect, useSession, signOut } from "@/lib/auth-client";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { normalizePhoneNumber } from "@/lib/phone";
+import type { RiskLevel } from "@/lib/risk-score";
 import {
   isUserRole,
   needsBusinessProfile,
@@ -102,6 +104,19 @@ type InboxItem = {
   variant: "info" | "warning";
 };
 
+type RiskScoreResult = {
+  requestedPhone?: string;
+  phone: string;
+  score: number | null;
+  riskLevel: RiskLevel;
+  riskLabel: string;
+  recommendation: string;
+  suggestedLimit: number;
+  checkedAt: string;
+  hasHistory: boolean;
+  error?: string;
+};
+
 type MobileTab = "analytics" | "creditors" | "network" | "inbox" | "profile";
 
 type SupplierProfile = UserProfile;
@@ -167,7 +182,74 @@ const statusLabels: Record<CreditRecord["status"], string> = {
 };
 
 function normalizePhone(value: string) {
-  return value.trim().replace(/\s+/g, "");
+  return normalizePhoneNumber(value);
+}
+
+function getRiskTone(riskLevel: RiskLevel) {
+  if (riskLevel === "EXCELLENT" || riskLevel === "LOW_RISK") {
+    return {
+      badge: "bg-emerald-50 text-emerald-700 border-emerald-100",
+      card: "border-emerald-100 bg-emerald-50 text-emerald-900",
+    };
+  }
+
+  if (riskLevel === "MODERATE_RISK" || riskLevel === "LIMITED_HISTORY") {
+    return {
+      badge: "bg-amber-50 text-amber-700 border-amber-100",
+      card: "border-amber-100 bg-amber-50 text-amber-900",
+    };
+  }
+
+  if (riskLevel === "NO_HISTORY") {
+    return {
+      badge: "bg-gray-50 text-gray-600 border-gray-200",
+      card: "border-gray-100 bg-gray-50 text-gray-800",
+    };
+  }
+
+  return {
+    badge: "bg-red-50 text-red-700 border-red-100",
+    card: "border-red-100 bg-red-50 text-red-900",
+  };
+}
+
+function RiskBadge({ result }: { result?: RiskScoreResult }) {
+  if (!result || result.error) {
+    return null;
+  }
+
+  const tone = getRiskTone(result.riskLevel);
+  const scoreText = result.score === null ? "No score" : `${result.score}/100`;
+
+  return (
+    <span
+      className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${tone.badge}`}
+    >
+      {scoreText} {result.riskLabel}
+    </span>
+  );
+}
+
+function RiskSummaryCard({ result }: { result: RiskScoreResult }) {
+  const tone = getRiskTone(result.riskLevel);
+  const scoreText = result.score === null ? "No score" : `${result.score}/100`;
+
+  return (
+    <div className={`rounded-lg border p-4 ${tone.card}`}>
+      <p className="text-xs font-semibold uppercase">
+        Holwa Network Score
+      </p>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-3xl font-semibold">{scoreText}</p>
+          <p className="mt-1 text-sm font-semibold">{result.riskLabel}</p>
+        </div>
+        <div className="sm:max-w-xs sm:text-right">
+          <p className="text-sm font-medium">{result.recommendation}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function amountOwed(record: CreditRecord) {
@@ -318,6 +400,14 @@ export default function DashboardPage() {
   const [credits, setCredits] = useState<CreditRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [riskScoresByPhone, setRiskScoresByPhone] = useState<
+    Record<string, RiskScoreResult>
+  >({});
+  const [isRiskDialogOpen, setIsRiskDialogOpen] = useState(false);
+  const [riskPhone, setRiskPhone] = useState("");
+  const [riskResult, setRiskResult] = useState<RiskScoreResult | null>(null);
+  const [riskError, setRiskError] = useState("");
+  const [isRiskChecking, setIsRiskChecking] = useState(false);
   const [isTopupOpen, setIsTopupOpen] = useState(false);
   const [topupPhone, setTopupPhone] = useState("");
   const [topupAmount, setTopupAmount] = useState("10");
@@ -748,10 +838,88 @@ export default function DashboardPage() {
     const startIndex = (currentPage - 1) * pageSize;
     return filteredCustomerGroups.slice(startIndex, startIndex + pageSize);
   }, [filteredCustomerGroups, currentPage]);
+  const customerScorePhones = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          customerGroups
+            .map((group) => normalizePhone(group.phone))
+            .filter(Boolean)
+        )
+      ),
+    [customerGroups]
+  );
+  const customerScorePhoneKey = customerScorePhones.join("|");
+  const getRiskResultForPhone = (phone: string) =>
+    riskScoresByPhone[normalizePhone(phone)] || riskScoresByPhone[phone];
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (
+      !session?.user?.id ||
+      !isBusinessDashboard ||
+      customerScorePhones.length === 0
+    ) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadRiskBadges = async () => {
+      try {
+        const response = await fetch("/api/risk-score", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.user.id,
+            phones: customerScorePhones,
+          }),
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          scores?: RiskScoreResult[];
+        };
+
+        if (!isActive || !data.scores) {
+          return;
+        }
+
+        setRiskScoresByPhone((prev) => {
+          const next = { ...prev };
+          data.scores?.forEach((score) => {
+            if (score.error) {
+              return;
+            }
+            next[normalizePhone(score.phone)] = score;
+            if (score.requestedPhone) {
+              next[normalizePhone(score.requestedPhone)] = score;
+            }
+          });
+          return next;
+        });
+      } catch {
+        // Score badges are helpful, but the dashboard should still load without them.
+      }
+    };
+
+    loadRiskBadges();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    customerScorePhoneKey,
+    customerScorePhones,
+    isBusinessDashboard,
+    session?.user?.id,
+  ]);
 
   useEffect(() => {
     if (!toast) {
@@ -814,6 +982,57 @@ export default function DashboardPage() {
           : [{ id: crypto.randomUUID(), name: "", quantity: "", unitPrice: "" }],
       };
     });
+  };
+
+  const openRiskDialog = (phone = "") => {
+    const normalizedPhone = normalizePhone(phone);
+    setRiskPhone(normalizedPhone);
+    setRiskResult(normalizedPhone ? getRiskResultForPhone(normalizedPhone) || null : null);
+    setRiskError("");
+    setIsRiskDialogOpen(true);
+  };
+
+  const handleCheckRisk = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!session.user?.id) {
+      return;
+    }
+
+    setRiskError("");
+    setRiskResult(null);
+    setIsRiskChecking(true);
+
+    try {
+      const response = await fetch("/api/risk-score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.id,
+          phone: riskPhone,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        score?: RiskScoreResult;
+      };
+
+      if (!response.ok || !data.score || data.score.error) {
+        setRiskError(data.score?.error || data.error || "Risk check failed.");
+        return;
+      }
+
+      setRiskResult(data.score);
+      setRiskScoresByPhone((prev) => ({
+        ...prev,
+        [normalizePhone(data.score!.phone)]: data.score!,
+        ...(data.score!.requestedPhone
+          ? { [normalizePhone(data.score!.requestedPhone)]: data.score! }
+          : {}),
+      }));
+    } finally {
+      setIsRiskChecking(false);
+    }
   };
 
   const handleAddCredit = async (event: React.FormEvent) => {
@@ -1936,13 +2155,22 @@ export default function DashboardPage() {
                 <h2 className="text-base font-semibold text-gray-900">
                   Creditors
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setIsAddDialogOpen(true)}
-                  className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
-                >
-                  Add credit
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openRiskDialog()}
+                    className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700"
+                  >
+                    Check risk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddDialogOpen(true)}
+                    className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    Add credit
+                  </button>
+                </div>
               </div>
               <input
                 type="search"
@@ -1970,9 +2198,10 @@ export default function DashboardPage() {
                         <p className="font-semibold text-gray-900">
                           {group.name}
                         </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {group.phone}
-                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <p className="text-xs text-gray-500">{group.phone}</p>
+                          <RiskBadge result={getRiskResultForPhone(group.phone)} />
+                        </div>
                       </div>
                       <p className="text-sm font-semibold text-gray-900">
                         {formatMoney(group.totalUnpaid)}
@@ -2288,12 +2517,20 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold text-gray-800">
                 List of Creditors
               </h3>
-              <button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 md:hidden"
-              >
-                Add Credit
-              </button>
+              <div className="flex items-center gap-2 md:hidden">
+                <button
+                  onClick={() => openRiskDialog()}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
+                >
+                  Check Risk
+                </button>
+                <button
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                >
+                  Add Credit
+                </button>
+              </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center md:flex-1 md:justify-center">
               <div className="w-full max-w-xs">
@@ -2306,12 +2543,20 @@ export default function DashboardPage() {
                 />
               </div>
             </div>
-            <button
-              onClick={() => setIsAddDialogOpen(true)}
-              className="hidden md:inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
-            >
-              Add Credit
-            </button>
+            <div className="hidden items-center gap-2 md:flex">
+              <button
+                onClick={() => openRiskDialog()}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
+              >
+                Check Risk
+              </button>
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                Add Credit
+              </button>
+            </div>
           </div>
           <div className="divide-y">
             {paginatedCustomerGroups.map((group) => (
@@ -2324,7 +2569,10 @@ export default function DashboardPage() {
                   <p className="text-base font-semibold text-gray-800">
                     {group.name}
                   </p>
-                  <p className="text-xs text-gray-500">{group.phone}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-xs text-gray-500">{group.phone}</p>
+                    <RiskBadge result={getRiskResultForPhone(group.phone)} />
+                  </div>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total unpaid</p>
@@ -2927,6 +3175,56 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
+      {isRiskDialogOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Check Holwa Network Score
+              </h3>
+              <button
+                onClick={() => setIsRiskDialogOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <form className="mt-4 space-y-4" onSubmit={handleCheckRisk}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Debtor phone number
+                </label>
+                <input
+                  type="tel"
+                  value={riskPhone}
+                  onChange={(event) => setRiskPhone(event.target.value)}
+                  placeholder="+254..."
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  required
+                />
+              </div>
+              {riskError ? (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {riskError}
+                </div>
+              ) : null}
+              <button
+                type="submit"
+                disabled={isRiskChecking}
+                className="inline-flex w-full items-center justify-center rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-200"
+              >
+                {isRiskChecking ? "Checking..." : "Check Score"}
+              </button>
+            </form>
+            {riskResult ? (
+              <div className="mt-4">
+                <RiskSummaryCard result={riskResult} />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {isAddDialogOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -3179,6 +3477,31 @@ export default function DashboardPage() {
                 <span className="text-gray-500">Phone</span>
                 <span className="font-medium">{selectedCustomerGroup.phone}</span>
               </div>
+              {getRiskResultForPhone(selectedCustomerGroup.phone) ? (
+                <RiskSummaryCard
+                  result={getRiskResultForPhone(selectedCustomerGroup.phone)!}
+                />
+              ) : (
+                <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-blue-900">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        Holwa Network Score
+                      </p>
+                      <p className="mt-1 text-sm text-blue-700">
+                        Check the network score for this debtor.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openRiskDialog(selectedCustomerGroup.phone)}
+                      className="inline-flex items-center justify-center rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                    >
+                      Check Risk
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-500">Earliest due</span>
                 <span className="font-medium">
