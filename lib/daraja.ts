@@ -48,8 +48,17 @@ function requiredEnv(name: string) {
 function getDarajaBaseUrl() {
   const configured = optionalEnv("DARAJA_BASE_URL");
   if (configured) {
-    return configured.replace(/\/$/, "");
+    try {
+      const parsedUrl = new URL(configured);
+      const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+      if (baseUrl.includes("safaricom.co.ke")) {
+        return baseUrl;
+      }
+    } catch {
+      // Fall through to the sandbox/live default below.
+    }
   }
+
   return optionalEnv("DARAJA_LIVE").toLowerCase() === "true"
     ? "https://api.safaricom.co.ke"
     : "https://sandbox.safaricom.co.ke";
