@@ -70,6 +70,7 @@ This project uses:
    MPESA_CALLBACK_TOKEN=your_private_callback_token
    DARAJA_LIVE=false
    DARAJA_BASE_URL=
+   DARAJA_TRANSACTION_TYPE=
    ```
 
 3. Run the development server:

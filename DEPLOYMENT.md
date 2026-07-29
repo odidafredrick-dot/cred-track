@@ -55,6 +55,7 @@ DARAJA_CALLBACK_URL=https://YOUR_VERCEL_DOMAIN/api/credits/webhook
 MPESA_CALLBACK_TOKEN=
 DARAJA_LIVE=false
 DARAJA_BASE_URL=
+DARAJA_TRANSACTION_TYPE=
 ```
 
 Optional, only if you intentionally want to enable the dev setup endpoint in a protected production environment:

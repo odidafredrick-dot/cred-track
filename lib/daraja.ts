@@ -45,6 +45,10 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function isDarajaLive() {
+  return optionalEnv("DARAJA_LIVE").toLowerCase() === "true";
+}
+
 function getDarajaBaseUrl() {
   const configured = optionalEnv("DARAJA_BASE_URL");
   if (configured) {
@@ -59,12 +63,16 @@ function getDarajaBaseUrl() {
     }
   }
 
-  return optionalEnv("DARAJA_LIVE").toLowerCase() === "true"
+  return isDarajaLive()
     ? "https://api.safaricom.co.ke"
     : "https://sandbox.safaricom.co.ke";
 }
 
 function getDarajaBusinessShortCode() {
+  if (!isDarajaLive() && optionalEnv("DARAJA_SHORTCODE")) {
+    return optionalEnv("DARAJA_SHORTCODE");
+  }
+
   const shortcode =
     optionalEnv("DARAJA_STORE_NUMBER") ||
     optionalEnv("DARAJA_TILL_NUMBER") ||
@@ -80,6 +88,10 @@ function getDarajaBusinessShortCode() {
 }
 
 function getDarajaPartyB() {
+  if (!isDarajaLive() && optionalEnv("DARAJA_SHORTCODE")) {
+    return optionalEnv("DARAJA_SHORTCODE");
+  }
+
   const partyB =
     optionalEnv("DARAJA_TILL_NUMBER") ||
     optionalEnv("DARAJA_STORE_NUMBER") ||
@@ -95,6 +107,18 @@ function getDarajaPartyB() {
 }
 
 function getDarajaTransactionType() {
+  const configured = optionalEnv("DARAJA_TRANSACTION_TYPE");
+  if (
+    configured === "CustomerPayBillOnline" ||
+    configured === "CustomerBuyGoodsOnline"
+  ) {
+    return configured;
+  }
+
+  if (!isDarajaLive()) {
+    return "CustomerPayBillOnline";
+  }
+
   if (optionalEnv("DARAJA_STORE_NUMBER") || optionalEnv("DARAJA_TILL_NUMBER")) {
     return "CustomerBuyGoodsOnline";
   }
