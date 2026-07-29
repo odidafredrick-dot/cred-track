@@ -418,7 +418,7 @@ export default function DashboardPage() {
   const [isRiskChecking, setIsRiskChecking] = useState(false);
   const [isTopupOpen, setIsTopupOpen] = useState(false);
   const [topupPhone, setTopupPhone] = useState("");
-  const [topupAmount, setTopupAmount] = useState("10");
+  const [topupAmount, setTopupAmount] = useState("1");
   const [isTopupSubmitting, setIsTopupSubmitting] = useState(false);
   const [isStockDialogOpen, setIsStockDialogOpen] = useState(false);
   const [isStockSubmitting, setIsStockSubmitting] = useState(false);
@@ -1522,17 +1522,24 @@ export default function DashboardPage() {
     if (!session?.user?.id) {
       return;
     }
-    if (!topupPhone.startsWith("+")) {
+    const topupPhoneValue = topupPhone.trim();
+    const cleanTopupPhone = topupPhoneValue.replace(/[\s-]/g, "");
+    const isKenyanPhone =
+      /^\+?254\d{9}$/.test(cleanTopupPhone) ||
+      /^0\d{9}$/.test(cleanTopupPhone) ||
+      /^7\d{8}$/.test(cleanTopupPhone);
+
+    if (!isKenyanPhone) {
       setToast({
-        message: "Enter a phone number in +254... format.",
+        message: "Enter a valid M-Pesa number, for example 07... or +254...",
         variant: "warning",
       });
       return;
     }
     const amount = Number(topupAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount % 10 !== 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
       setToast({
-        message: "Amount must be a multiple of 10.",
+        message: "Amount must be a whole KES amount.",
         variant: "warning",
       });
       return;
@@ -1545,7 +1552,7 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: session.user.id,
-          phone: topupPhone.trim(),
+          phone: topupPhoneValue,
           amount,
         }),
       });
@@ -1568,7 +1575,7 @@ export default function DashboardPage() {
       }
       setIsTopupOpen(false);
       setTopupPhone("");
-      setTopupAmount("10");
+      setTopupAmount("1");
     } finally {
       setIsTopupSubmitting(false);
     }
@@ -2150,68 +2157,54 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
-              <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-4">
-                <h2 className="text-base font-semibold text-gray-900">
-                  {isSupplierDashboard ? "In Store" : "Stock items"}
-                </h2>
-                <button
-                  type="button"
-                  onClick={openAddStockDialog}
-                  className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
-                >
-                  {isSupplierDashboard ? "Add item" : "Add stock"}
-                </button>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {stockItems.length === 0 ? (
-                  <div className="px-4 py-6 text-sm text-gray-500">
-                    No stock items added yet.
-                  </div>
-                ) : (
-                  stockItems.map((item) => (
-                    <div key={item.id} className="space-y-3 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-gray-900">
-                            {item.product}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-500">
-                            {isSupplierDashboard
-                              ? formatMoney(Number(item.sellingPrice))
-                              : `Qty ${item.quantity}`}
-                          </p>
+            {isSupplierDashboard ? (
+              <section className="rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-4">
+                  <h2 className="text-base font-semibold text-gray-900">
+                    In Store
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={openAddStockDialog}
+                    className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    Add item
+                  </button>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {stockItems.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-gray-500">
+                      No store items added yet.
+                    </div>
+                  ) : (
+                    stockItems.map((item) => (
+                      <div key={item.id} className="space-y-3 px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {item.product}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {formatMoney(Number(item.sellingPrice))}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openEditStockDialog(item)}
+                            className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700"
+                          >
+                            Edit
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            isSupplierDashboard
-                              ? openEditStockDialog(item)
-                              : setSelectedStock(item)
-                          }
-                          className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700"
-                        >
-                          {isSupplierDashboard ? "Edit" : "View"}
-                        </button>
-                      </div>
-                      {isSupplierDashboard ? (
                         <p className="text-sm text-gray-500">
                           {item.offers || "No offer added"}
                         </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleNotifySupplier(item.id)}
-                          className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          Notify supplier
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            ) : null}
           </>
         ) : null}
 
@@ -2707,6 +2700,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {isSupplierDashboard ? (
         <div className="bg-white rounded-lg shadow">
           <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
             <h3 className="text-lg font-semibold text-gray-800">
@@ -2798,6 +2792,7 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+        ) : null}
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
@@ -3468,7 +3463,7 @@ export default function DashboardPage() {
                   type="tel"
                   value={topupPhone}
                   onChange={(event) => setTopupPhone(event.target.value)}
-                  placeholder="+254..."
+                  placeholder="07... or +254..."
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
@@ -3479,8 +3474,8 @@ export default function DashboardPage() {
                 </label>
                 <input
                   type="number"
-                  min="10"
-                  step="10"
+                  min="1"
+                  step="1"
                   value={topupAmount}
                   onChange={(event) => setTopupAmount(event.target.value)}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
@@ -3488,7 +3483,7 @@ export default function DashboardPage() {
                 />
               </div>
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Each Ksh 10 adds 3 reminder credits.
+                Each Ksh 1 adds 1 reminder credit.
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button

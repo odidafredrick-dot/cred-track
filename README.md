@@ -60,7 +60,16 @@ This project uses:
    AFRICAS_TALKING_USERNAME=your_africas_talking_username
    AFRICAS_TALKING_API_KEY=your_africas_talking_api_key
    AFRICAS_TALKING_SENDER_ID=your_sender_id
-   INTASEND_SECRET_KEY=your_intasend_secret_key
+   DARAJA_CONSUMER_KEY=your_daraja_consumer_key
+   DARAJA_CONSUMER_SECRET=your_daraja_consumer_secret
+   DARAJA_PASSKEY=your_daraja_passkey
+   DARAJA_SHORTCODE=your_paybill_shortcode
+   DARAJA_TILL_NUMBER=your_till_number_if_using_buy_goods
+   DARAJA_STORE_NUMBER=your_store_number_if_safaricom_provides_one
+   DARAJA_CALLBACK_URL=https://your-domain.com/api/credits/webhook
+   MPESA_CALLBACK_TOKEN=your_private_callback_token
+   DARAJA_LIVE=false
+   DARAJA_BASE_URL=
    ```
 
 3. Run the development server:

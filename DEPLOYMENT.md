@@ -9,7 +9,7 @@ The app currently uses Next.js API routes under `app/api/*`, so the frontend and
 ## Vercel
 
 1. Push the repository to GitHub.
-2. Import `https://github.com/203o/cred-track` in Vercel.
+2. Import `https://github.com/odidafredrick-dot/cred-track` in Vercel.
 3. Use the default Next.js framework settings.
 4. Add the environment variables from `.env.example`.
 5. Deploy.
@@ -45,9 +45,16 @@ AFRICAS_TALKING_USERNAME=
 AFRICAS_TALKING_API_KEY=
 AFRICAS_TALKING_SENDER_ID=
 
-INTASEND_SECRET_KEY=
-INTASEND_BASE_URL=https://api.intasend.com
-INTASEND_WEBHOOK_SECRET=
+DARAJA_CONSUMER_KEY=
+DARAJA_CONSUMER_SECRET=
+DARAJA_PASSKEY=
+DARAJA_SHORTCODE=
+DARAJA_TILL_NUMBER=
+DARAJA_STORE_NUMBER=
+DARAJA_CALLBACK_URL=https://YOUR_VERCEL_DOMAIN/api/credits/webhook
+MPESA_CALLBACK_TOKEN=
+DARAJA_LIVE=false
+DARAJA_BASE_URL=
 ```
 
 Optional, only if you intentionally want to enable the dev setup endpoint in a protected production environment:
@@ -84,15 +91,21 @@ npx prisma migrate deploy
 
 The Vercel build runs `prisma generate` through `npm run build`.
 
-## IntaSend Webhook
+## Daraja M-Pesa Callback
 
-If IntaSend webhooks are enabled, set the webhook URL to:
+Set the Daraja callback URL to:
 
 ```txt
 https://YOUR_VERCEL_DOMAIN/api/credits/webhook
 ```
 
-Use `INTASEND_WEBHOOK_SECRET` in both IntaSend and Vercel.
+If `MPESA_CALLBACK_TOKEN` is set, the app automatically appends it to the callback URL when creating an STK push:
+
+```txt
+https://YOUR_VERCEL_DOMAIN/api/credits/webhook?token=YOUR_TOKEN
+```
+
+Use the same `DARAJA_CALLBACK_URL` and `MPESA_CALLBACK_TOKEN` values in Vercel.
 
 ## Later: Render Backend
 

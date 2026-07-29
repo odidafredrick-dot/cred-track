@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createDarajaStkPush, normalizeMpesaPhone } from "@/lib/daraja";
 import { prisma } from "@/lib/prisma";
 
 type TopupBody = {
@@ -21,14 +22,29 @@ export async function POST(request: NextRequest) {
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
-  if (amount % 10 !== 0) {
+  if (!Number.isInteger(amount)) {
     return NextResponse.json(
-      { error: "Amount must be in multiples of 10" },
+      { error: "Amount must be a whole KES amount" },
       { status: 400 }
     );
   }
 
-  const creditsAdded = (amount / 10) * 3;
+  let normalizedPhone: string;
+  try {
+    normalizedPhone = normalizeMpesaPhone(body.phone);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Phone number must be a valid Kenyan M-Pesa number.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const creditsAdded = amount;
   const apiRef = `topup_${body.userId}_${Date.now()}`;
 
   const user = await prisma.user.findUnique({
@@ -42,7 +58,7 @@ export async function POST(request: NextRequest) {
   const topup = await prisma.creditTopup.create({
     data: {
       userId: body.userId,
-      phone: body.phone,
+      phone: normalizedPhone,
       amount,
       creditsAdded,
       apiRef,
@@ -50,28 +66,25 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-    const normalizedPhone = body.phone.replace(/^\+/, "").trim();
-    const { createStkPush } = await import("@/lib/intasend");
-    const response = await createStkPush({
+    const response = await createDarajaStkPush({
       phoneNumber: normalizedPhone,
-      email: user.email,
       amount,
       apiRef,
       narrative: "Holwa reminder credits",
     });
 
-    const invoiceId =
-      response?.invoice?.invoice_id ||
-      response?.invoice_id ||
-      response?.id ||
-      null;
+    const checkoutId = response.CheckoutRequestID || null;
 
     await prisma.creditTopup.update({
       where: { id: topup.id },
-      data: { invoiceId },
+      data: { invoiceId: checkoutId },
     });
 
-    return NextResponse.json({ topupId: topup.id, invoiceId });
+    return NextResponse.json({
+      topupId: topup.id,
+      checkoutId,
+      merchantRequestId: response.MerchantRequestID || null,
+    });
   } catch (error) {
     console.error("[Topup] STK push failed", {
       userId: body.userId,

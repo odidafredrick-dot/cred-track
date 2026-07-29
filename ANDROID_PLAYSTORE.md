@@ -10,7 +10,7 @@ Holwa is a Next.js app, so the recommended Android path is a Progressive Web App
    - `DATABASE_URL`
    - Firebase public keys
    - Africa's Talking keys
-   - IntaSend keys and webhook secret
+   - Daraja M-Pesa keys and callback token
 4. Run database migrations against production:
 
 ```bash
