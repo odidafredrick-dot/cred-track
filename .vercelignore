@@ -1,0 +1,9 @@
+.env
+.env.*
+.git
+.next
+node_modules
+*.apk
+*.aab
+android-test
+android-twa
