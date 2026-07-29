@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type SendSingleBody = {
   userId: string;
@@ -7,6 +9,11 @@ type SendSingleBody = {
 };
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as SendSingleBody;
 
   console.log("[Remind] send-single request", {
@@ -21,10 +28,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `reminder:single:${user.uid}`,
+    limit: 20,
+    windowMs: 10 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
+  }
+
   const balance = await prisma.creditBalance.upsert({
-    where: { userId: body.userId },
+    where: { userId: user.uid },
     update: {},
-    create: { userId: body.userId, balance: 0 },
+    create: { userId: user.uid, balance: 0 },
   });
 
   if (balance.balance < 1) {
@@ -37,7 +58,7 @@ export async function POST(request: NextRequest) {
   const credit = await prisma.credit.findFirst({
     where: {
       id: body.creditId,
-      userId: body.userId,
+      userId: user.uid,
       status: { not: "PAID" },
     },
   });
@@ -66,7 +87,7 @@ export async function POST(request: NextRequest) {
     });
 
     const updatedBalance = await prisma.creditBalance.update({
-      where: { userId: body.userId },
+      where: { userId: user.uid },
       data: { balance: { decrement: 1 } },
     });
 

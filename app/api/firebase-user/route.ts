@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  forbiddenResponse,
+  getAuthenticatedUser,
+  unauthorizedResponse,
+} from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
 type FirebaseUserBody = {
@@ -13,30 +18,43 @@ function clean(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  const authenticatedUser = await getAuthenticatedUser(request);
+  if (!authenticatedUser) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as FirebaseUserBody;
   const id = clean(body.id);
-  const email = clean(body.email);
+  const email = clean(authenticatedUser.email) || clean(body.email);
   const name = clean(body.name);
   const image = clean(body.image);
 
-  if (!id || !email) {
+  if (!id) {
     return NextResponse.json(
-      { error: "Missing Firebase user id or email" },
+      { error: "Missing Firebase user id" },
       { status: 400 }
     );
   }
 
+  if (id !== authenticatedUser.uid) {
+    return forbiddenResponse();
+  }
+
+  const fallbackEmail = `${authenticatedUser.uid}@firebase.local`;
+  const requestedEmail = email || fallbackEmail;
   const existingById = await prisma.user.findUnique({
-    where: { id },
+    where: { id: authenticatedUser.uid },
   });
   const existingByEmail = await prisma.user.findUnique({
-    where: { email },
+    where: { email: requestedEmail },
   });
   const storedEmail =
-    existingByEmail && existingByEmail.id !== id ? `${id}@firebase.local` : email;
+    existingByEmail && existingByEmail.id !== authenticatedUser.uid
+      ? fallbackEmail
+      : requestedEmail;
 
   const user = await prisma.user.upsert({
-    where: { id },
+    where: { id: authenticatedUser.uid },
     update: {
       email: storedEmail,
       name: name || null,
@@ -44,7 +62,7 @@ export async function POST(request: NextRequest) {
       emailVerified: true,
     },
     create: {
-      id,
+      id: authenticatedUser.uid,
       email: existingById ? existingById.email : storedEmail,
       name: name || null,
       image: image || null,

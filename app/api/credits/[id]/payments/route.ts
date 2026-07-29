@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeCreditStatus } from "@/lib/credit-status";
+import { getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 
 type CreatePaymentBody = {
   amount?: number;
@@ -21,6 +22,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { id } = await params;
   const body = (await request.json()) as CreatePaymentBody;
   const requestedAmount = Number(body.amount || 0);
@@ -39,6 +45,10 @@ export async function POST(
 
     if (!credit) {
       return { error: "Credit not found", status: 404 as const };
+    }
+
+    if (credit.userId !== user.uid) {
+      return { error: "Forbidden", status: 403 as const };
     }
 
     const totalAmount = Number(credit.totalAmount);

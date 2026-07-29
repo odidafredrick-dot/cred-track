@@ -293,7 +293,7 @@ export function extractDarajaCallbackMetadata(
 export function verifyMpesaCallbackToken(suppliedToken: string | null) {
   const expectedToken = optionalEnv("MPESA_CALLBACK_TOKEN");
   if (!expectedToken) {
-    return true;
+    return process.env.NODE_ENV !== "production";
   }
 
   const supplied = (suppliedToken || "").trim();

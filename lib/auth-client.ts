@@ -17,6 +17,45 @@ import {
 } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
 
+declare global {
+  interface Window {
+    __holwaFetchPatched?: boolean;
+  }
+}
+
+if (typeof window !== "undefined" && !window.__holwaFetchPatched) {
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (!url.startsWith("/api/")) {
+      return originalFetch(input, init);
+    }
+
+    const headers = new Headers(init?.headers ?? {});
+
+    if (!headers.has("authorization") && firebaseAuth.currentUser) {
+      return firebaseAuth.currentUser
+        .getIdToken()
+        .then((token) => {
+          headers.set("authorization", `Bearer ${token}`);
+          return originalFetch(input, { ...init, headers });
+        })
+        .catch(() => originalFetch(input, init));
+    }
+
+    return originalFetch(input, init);
+  };
+
+  window.__holwaFetchPatched = true;
+}
+
 type SessionUser = {
   id: string;
   name: string | null;

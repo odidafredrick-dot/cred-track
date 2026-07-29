@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeCreditStatus } from "@/lib/credit-status";
+import {
+  forbiddenResponse,
+  getAuthenticatedUser,
+  unauthorizedResponse,
+} from "@/lib/auth-server";
 
 type UpdateCreditBody = {
   status?: "PENDING" | "DUE" | "OVERDUE" | "PARTIALLY_PAID" | "PAID";
@@ -20,6 +25,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { id } = await params;
   const body = (await request.json()) as UpdateCreditBody;
 
@@ -33,6 +43,10 @@ export async function PATCH(
 
   if (!existing) {
     return NextResponse.json({ error: "Credit not found" }, { status: 404 });
+  }
+
+  if (existing.userId !== user.uid) {
+    return forbiddenResponse();
   }
 
   const nextAmountPaid =
@@ -57,10 +71,28 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { id } = await params;
+
+  const existing = await prisma.credit.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+
+  if (!existing) {
+    return NextResponse.json({ error: "Credit not found" }, { status: 404 });
+  }
+
+  if (existing.userId !== user.uid) {
+    return forbiddenResponse();
+  }
 
   await prisma.credit.delete({
     where: { id },

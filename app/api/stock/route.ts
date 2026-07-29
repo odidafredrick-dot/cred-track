@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 
 type CreateStockBody = {
   userId: string;
@@ -12,15 +13,24 @@ type CreateStockBody = {
 };
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
 
-  if (!userId) {
+  const { searchParams } = new URL(request.url);
+  const requestedUserId = searchParams.get("userId")?.trim();
+
+  if (!requestedUserId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  if (requestedUserId !== user.uid) {
+    return forbiddenResponse();
+  }
+
   const items = await prisma.stockItem.findMany({
-    where: { userId },
+    where: { userId: user.uid },
     orderBy: { createdAt: "desc" },
   });
 
@@ -28,6 +38,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as CreateStockBody;
 
   if (
@@ -44,9 +59,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
+  }
+
   const item = await prisma.stockItem.create({
     data: {
-      userId: body.userId,
+      userId: user.uid,
       product: body.product.trim(),
       buyingPrice: Number(body.buyingPrice),
       sellingPrice: Number(body.sellingPrice),

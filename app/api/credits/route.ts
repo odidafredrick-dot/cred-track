@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeCreditStatus } from "@/lib/credit-status";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { sanitizeText } from "@/lib/sanitize";
 
 type CreditItemInput = {
   name: string;
@@ -22,6 +24,10 @@ function normalizePhone(phone: string) {
   return normalizePhoneNumber(phone);
 }
 
+function sanitizeCustomerName(value: unknown) {
+  return sanitizeText(value, 80);
+}
+
 const creditInclude = {
   customer: true,
   items: true,
@@ -33,21 +39,30 @@ const creditInclude = {
 };
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
 
-  if (!userId) {
+  const { searchParams } = new URL(request.url);
+  const requestedUserId = searchParams.get("userId")?.trim();
+
+  if (!requestedUserId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  if (requestedUserId !== user.uid) {
+    return forbiddenResponse();
+  }
+
   const balance = await prisma.creditBalance.upsert({
-    where: { userId },
+    where: { userId: user.uid },
     update: {},
-    create: { userId, balance: 0 },
+    create: { userId: user.uid, balance: 0 },
   });
 
   const credits = await prisma.credit.findMany({
-    where: { userId },
+    where: { userId: user.uid },
     include: creditInclude,
     orderBy: { createdAt: "desc" },
   });
@@ -73,7 +88,7 @@ export async function GET(request: NextRequest) {
   if (updates.length) {
     await Promise.all(updates);
     const refreshedCredits = await prisma.credit.findMany({
-      where: { userId },
+      where: { userId: user.uid },
       include: creditInclude,
       orderBy: { createdAt: "desc" },
     });
@@ -85,6 +100,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as CreateCreditBody;
 
   if (
@@ -97,6 +117,10 @@ export async function POST(request: NextRequest) {
       { error: "Missing required fields" },
       { status: 400 }
     );
+  }
+
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
   }
 
   if (!body.items || body.items.length === 0) {
@@ -113,7 +137,7 @@ export async function POST(request: NextRequest) {
   }, 0);
   const requestedAmountPaid = Number(body.amountPaid || 0);
   const amountPaid = Math.min(Math.max(0, requestedAmountPaid), totalAmount);
-  const customerName = body.customerName.trim();
+  const customerName = sanitizeCustomerName(body.customerName);
   const customerPhone = normalizePhone(body.customerPhone);
   const dueDate = new Date(body.dueDate);
   const status = computeCreditStatus({
@@ -127,13 +151,13 @@ export async function POST(request: NextRequest) {
     const customer = await tx.customer.upsert({
       where: {
         userId_phone: {
-          userId: body.userId,
+          userId: user.uid,
           phone: customerPhone,
         },
       },
       update: { name: customerName },
       create: {
-        userId: body.userId,
+        userId: user.uid,
         name: customerName,
         phone: customerPhone,
       },
@@ -141,7 +165,7 @@ export async function POST(request: NextRequest) {
 
     return tx.credit.create({
       data: {
-        userId: body.userId,
+        userId: user.uid,
         customerId: customer.id,
         customerName,
         customerPhone,
@@ -151,7 +175,7 @@ export async function POST(request: NextRequest) {
         status,
         items: {
           create: body.items.map((item) => ({
-            name: item.name.trim(),
+            name: sanitizeText(item.name, 80),
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             total: item.quantity * item.unitPrice,

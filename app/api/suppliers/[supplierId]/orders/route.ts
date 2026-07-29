@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type RouteContext = {
   params: Promise<{ supplierId: string }>;
@@ -32,6 +34,11 @@ function compactLocation(parts: Array<string | null>) {
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { supplierId } = await context.params;
   const body = (await request.json()) as CreateOrderBody;
   const buyerUserId = clean(body.buyerUserId);
@@ -42,6 +49,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { error: "Select at least one item" },
       { status: 400 }
     );
+  }
+
+  if (buyerUserId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `supplier-order:${user.uid}`,
+    limit: 10,
+    windowMs: 10 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
   }
 
   const buyerProfile = await prisma.userProfile.findUnique({

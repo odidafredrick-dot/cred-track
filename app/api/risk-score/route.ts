@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 import { getPhoneSearchVariants, normalizePhoneNumber } from "@/lib/phone";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { calculateHolwaRiskScore } from "@/lib/risk-score";
 
 type RiskScoreRequest = {
@@ -89,10 +91,29 @@ async function calculateForPhone(
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as RiskScoreRequest;
 
   if (!body.userId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+  }
+
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `risk-score:${user.uid}`,
+    limit: 60,
+    windowMs: 60 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
   }
 
   const requestedPhones = body.phones?.length
@@ -120,7 +141,7 @@ export async function POST(request: NextRequest) {
   );
   const saveCheck = body.phones?.length ? false : body.saveCheck !== false;
   const scores = await Promise.all(
-    uniquePhones.map((phone) => calculateForPhone(phone, body.userId!, saveCheck))
+    uniquePhones.map((phone) => calculateForPhone(phone, user.uid, saveCheck))
   );
 
   if (body.phones?.length) {

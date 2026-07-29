@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 
 type RouteContext = {
   params: Promise<{ supplierId: string }>;
 };
 
 export async function GET(request: NextRequest, context: RouteContext) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { supplierId } = await context.params;
   const { searchParams } = new URL(request.url);
   const buyerUserId = searchParams.get("buyerUserId")?.trim();
 
   if (!buyerUserId) {
     return NextResponse.json({ error: "Missing buyer user" }, { status: 400 });
+  }
+
+  if (buyerUserId !== user.uid) {
+    return forbiddenResponse();
   }
 
   const buyerProfile = await prisma.userProfile.findUnique({

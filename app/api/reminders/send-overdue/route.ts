@@ -1,20 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type SendRemindersBody = {
   userId: string;
 };
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as SendRemindersBody;
 
   if (!body.userId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `reminder:overdue:${user.uid}`,
+    limit: 5,
+    windowMs: 10 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
+  }
+
   const credits = await prisma.credit.findMany({
     where: {
-      userId: body.userId,
+      userId: user.uid,
       status: "OVERDUE",
     },
     include: { items: true },
@@ -25,9 +46,9 @@ export async function POST(request: NextRequest) {
   }
 
   const balance = await prisma.creditBalance.upsert({
-    where: { userId: body.userId },
+    where: { userId: user.uid },
     update: {},
-    create: { userId: body.userId, balance: 0 },
+    create: { userId: user.uid, balance: 0 },
   });
 
   if (balance.balance < credits.length) {
@@ -64,7 +85,7 @@ export async function POST(request: NextRequest) {
   }
 
   const updatedBalance = await prisma.creditBalance.update({
-    where: { userId: body.userId },
+    where: { userId: user.uid },
     data: { balance: { decrement: sentCount } },
   });
 

@@ -2250,7 +2250,9 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     key={group.key}
-                    onClick={() => setSelectedCustomerKey(group.key)}
+                    onClick={() =>
+                      router.push(`/creditors/${encodeURIComponent(group.key)}`)
+                    }
                     className="w-full px-4 py-4 text-left"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -2316,6 +2318,11 @@ export default function DashboardPage() {
                       <p className="font-semibold text-gray-900">
                         {supplier.businessName}
                       </p>
+                      {supplier.description ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-gray-700">
+                          {supplier.description}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-sm text-gray-500">
                         {[supplier.county, supplier.town, supplier.estate]
                           .filter(Boolean)
@@ -2667,7 +2674,9 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setSelectedCustomerKey(group.key)}
+                  onClick={() =>
+                    router.push(`/creditors/${encodeURIComponent(group.key)}`)
+                  }
                   className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
                 >
                   View
@@ -3106,6 +3115,11 @@ export default function DashboardPage() {
                       <h4 className="text-base font-semibold text-gray-900">
                         {supplier.businessName}
                       </h4>
+                      {supplier.description ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-gray-700">
+                          {supplier.description}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-sm text-gray-500">
                         {[supplier.county, supplier.town, supplier.estate]
                           .filter(Boolean)

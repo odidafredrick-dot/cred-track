@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 
 type UpdateStockBody = {
   reduceBy?: number;
@@ -19,6 +20,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { id } = await params;
   const body = (await request.json()) as UpdateStockBody;
 
@@ -28,6 +34,10 @@ export async function PATCH(
 
   if (!item) {
     return NextResponse.json({ error: "Stock item not found" }, { status: 404 });
+  }
+
+  if (item.userId !== user.uid) {
+    return forbiddenResponse();
   }
 
   if (body.reduceBy !== undefined) {

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const username = process.env.AFRICAS_TALKING_USERNAME;
   const apiKey = process.env.AFRICAS_TALKING_API_KEY;
 
@@ -23,14 +27,12 @@ export async function GET() {
     },
   });
 
-  const text = await response.text();
-
   if (!response.ok) {
     return NextResponse.json(
-      { ok: false, status: response.status, body: text },
+      { ok: false, status: response.status },
       { status: response.status }
     );
   }
 
-  return NextResponse.json({ ok: true, body: text });
+  return NextResponse.json({ ok: true, status: response.status });
 }

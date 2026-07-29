@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 
 function normalizeProduct(value: string) {
   return value.trim().toLowerCase();
@@ -18,6 +19,11 @@ function stockStatus(quantity: number) {
 }
 
 export async function GET(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const { searchParams } = new URL(request.url);
   const supplierUserId = searchParams.get("supplierUserId")?.trim();
 
@@ -26,6 +32,10 @@ export async function GET(request: NextRequest) {
       { error: "Missing supplier user" },
       { status: 400 }
     );
+  }
+
+  if (supplierUserId !== user.uid) {
+    return forbiddenResponse();
   }
 
   const supplierProfile = await prisma.userProfile.findUnique({

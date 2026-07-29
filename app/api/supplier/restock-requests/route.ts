@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type RestockBody = {
   supplierUserId: string;
@@ -16,6 +18,11 @@ function normalizeProduct(value: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as RestockBody;
   const supplierUserId = clean(body.supplierUserId);
   const businessUserId = clean(body.businessUserId);
@@ -26,6 +33,20 @@ export async function POST(request: NextRequest) {
       { error: "Missing restock request details" },
       { status: 400 }
     );
+  }
+
+  if (supplierUserId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `restock-request:${user.uid}`,
+    limit: 10,
+    windowMs: 10 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
   }
 
   const [supplierProfile, businessProfile, stockItem] = await Promise.all([

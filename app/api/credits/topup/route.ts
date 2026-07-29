@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDarajaStkPush, normalizeMpesaPhone } from "@/lib/daraja";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type TopupBody = {
   userId: string;
@@ -9,6 +11,11 @@ type TopupBody = {
 };
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as TopupBody;
 
   if (!body.userId || !body.phone || !body.amount) {
@@ -16,6 +23,20 @@ export async function POST(request: NextRequest) {
       { error: "Missing userId, phone, or amount" },
       { status: 400 }
     );
+  }
+
+  if (body.userId !== user.uid) {
+    return forbiddenResponse();
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `topup:${user.uid}`,
+    limit: 5,
+    windowMs: 15 * 60 * 1000,
+  });
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit.retryAfterSeconds);
   }
 
   const amount = Number(body.amount);
@@ -45,19 +66,19 @@ export async function POST(request: NextRequest) {
   }
 
   const creditsAdded = amount;
-  const apiRef = `topup_${body.userId}_${Date.now()}`;
+  const apiRef = `topup_${user.uid}_${Date.now()}`;
 
-  const user = await prisma.user.findUnique({
-    where: { id: body.userId },
+  const existingUser = await prisma.user.findUnique({
+    where: { id: user.uid },
   });
 
-  if (!user) {
+  if (!existingUser) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   const topup = await prisma.creditTopup.create({
     data: {
-      userId: body.userId,
+      userId: user.uid,
       phone: normalizedPhone,
       amount,
       creditsAdded,
@@ -87,8 +108,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[Topup] STK push failed", {
-      userId: body.userId,
-      phone: body.phone,
+      userId: user.uid,
+      phone: normalizedPhone,
       message: error instanceof Error ? error.message : "Unknown error",
     });
 

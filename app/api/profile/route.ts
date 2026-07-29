@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { sanitizeText } from "@/lib/sanitize";
 import {
   isPaymentMode,
   isUserRole,
@@ -21,25 +23,39 @@ type ProfileBody = {
 };
 
 function clean(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+  return sanitizeText(value, 200);
 }
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
 
-  if (!userId) {
+  const { searchParams } = new URL(request.url);
+  const requestedUserId = searchParams.get("userId")?.trim();
+
+  if (!requestedUserId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  if (requestedUserId !== user.uid) {
+    return forbiddenResponse();
+  }
+
   const profile = await prisma.userProfile.findUnique({
-    where: { userId },
+    where: { userId: user.uid },
   });
 
   return NextResponse.json({ profile });
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
   const body = (await request.json()) as ProfileBody;
   const userId = clean(body.userId);
   const role = body.role;
@@ -49,6 +65,10 @@ export async function POST(request: NextRequest) {
       { error: "Missing or invalid user role" },
       { status: 400 }
     );
+  }
+
+  if (userId !== user.uid) {
+    return forbiddenResponse();
   }
 
   const businessName = clean(body.businessName);
