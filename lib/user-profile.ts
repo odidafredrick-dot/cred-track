@@ -1,4 +1,4 @@
-export const userRoles = ["BUSINESS", "SUPPLIER", "INDIVIDUAL"] as const;
+export const userRoles = ["BUSINESS", "SUPPLIER", "INDIVIDUAL", "ADMIN"] as const;
 
 export type UserRole = (typeof userRoles)[number];
 
@@ -6,6 +6,7 @@ export const roleLabels: Record<UserRole, string> = {
   BUSINESS: "Business",
   SUPPLIER: "Supplier",
   INDIVIDUAL: "Individual",
+  ADMIN: "Admin",
 };
 
 export const paymentModes = ["POCHI", "PAY_BILL", "CASH", "TILL"] as const;

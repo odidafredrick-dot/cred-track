@@ -198,7 +198,13 @@ async function resolvePostAuthURL(user: FirebaseUser, fallbackURL = "/dashboard"
 
   const data = (await profileResponse.json()) as {
     profile?: { role?: string } | null;
+    isAdmin?: boolean;
   };
+
+  if (data.isAdmin || data.profile?.role === "ADMIN") {
+    window.localStorage.removeItem(selectedRoleStorageKey);
+    return "/admin";
+  }
 
   if (data.profile) {
     window.localStorage.removeItem(selectedRoleStorageKey);

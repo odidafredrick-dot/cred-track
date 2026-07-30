@@ -527,9 +527,16 @@ export default function DashboardPage() {
 
         const data = (await response.json()) as {
           profile: UserProfile | null;
+          isAdmin?: boolean;
         };
 
         if (!isActive) {
+          return;
+        }
+
+        if (data.isAdmin || data.profile?.role === "ADMIN") {
+          window.localStorage.removeItem(selectedRoleStorageKey);
+          router.replace("/admin");
           return;
         }
 

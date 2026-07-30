@@ -31,6 +31,7 @@ enum UserRole {
   BUSINESS
   SUPPLIER
   INDIVIDUAL
+  ADMIN
 }
 
 enum PaymentMode {
@@ -49,6 +50,17 @@ enum RiskLevel {
   DO_NOT_EXTEND
   LIMITED_HISTORY
   NO_HISTORY
+}
+
+enum PriceRuleScope {
+  GLOBAL
+  SUPPLIER
+  CATEGORY
+}
+
+enum PriceRuleStatus {
+  ACTIVE
+  PAUSED
 }
 
 model User {
@@ -234,6 +246,84 @@ model HolwaRiskScoreCheck {
   @@index([requesterUserId])
   @@index([debtorPhone])
   @@index([createdAt])
+}
+
+model PriceRule {
+  id                String          @id @default(cuid())
+  name              String
+  scope             PriceRuleScope  @default(GLOBAL)
+  scopeValue        String?
+  minMarkupPercent  Decimal?        @db.Decimal(10, 2)
+  maxMarkupPercent  Decimal?        @db.Decimal(10, 2)
+  minSellingPrice   Decimal?        @db.Decimal(10, 2)
+  maxSellingPrice   Decimal?        @db.Decimal(10, 2)
+  status            PriceRuleStatus @default(ACTIVE)
+  notes             String?         @db.Text
+  createdByUserId   String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  audits PriceAuditLog[]
+
+  @@index([scope])
+  @@index([status])
+}
+
+model PriceAuditLog {
+  id          String   @id @default(cuid())
+  priceRuleId String?
+  adminUserId String
+  action      String
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  priceRule PriceRule? @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
+
+  @@index([priceRuleId])
+  @@index([adminUserId])
+  @@index([createdAt])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  adminUserId String
+  action      String
+  targetType  String
+  targetId    String?
+  summary     String   @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([adminUserId])
+  @@index([targetType])
+  @@index([createdAt])
+}
+
+model SystemAnnouncement {
+  id              String    @id @default(cuid())
+  title           String
+  body            String    @db.Text
+  active          Boolean   @default(true)
+  audience        UserRole?
+  createdByUserId String?
+  startsAt        DateTime?
+  endsAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([active])
+  @@index([audience])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?  @db.Text
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model StockItem {

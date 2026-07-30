@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbiddenResponse, getAuthenticatedUser, unauthorizedResponse } from "@/lib/auth-server";
+import { isAdminEmail } from "@/lib/admin";
 import { sanitizeText } from "@/lib/sanitize";
 import {
   isPaymentMode,
@@ -47,7 +48,10 @@ export async function GET(request: NextRequest) {
     where: { userId: user.uid },
   });
 
-  return NextResponse.json({ profile });
+  return NextResponse.json({
+    profile,
+    isAdmin: String(profile?.role || "") === "ADMIN" || isAdminEmail(user.email),
+  });
 }
 
 export async function POST(request: NextRequest) {
