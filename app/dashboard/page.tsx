@@ -1,6 +1,15 @@
 "use client";
 
 import { hasPendingAuthRedirect, useSession, signOut } from "@/lib/auth-client";
+import {
+  AuthLoadingScreen,
+  InlineListSkeleton,
+} from "@/components/loading-states";
+import {
+  getUnpaidItemRowsForCredit,
+  totalItemQuantity,
+  type UnpaidCreditItemRow,
+} from "@/lib/credit-items";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -65,7 +74,7 @@ type CustomerCreditGroup = {
   phone: string;
   credits: CreditRecord[];
   unpaidCredits: CreditRecord[];
-  unpaidItems: CreditItem[];
+  unpaidItems: UnpaidCreditItemRow<CreditItem>[];
   totalUnpaid: number;
   earliestDueDate: string | null;
   status: CreditRecord["status"];
@@ -262,10 +271,6 @@ function RiskSummaryCard({ result }: { result: RiskScoreResult }) {
 
 function amountOwed(record: CreditRecord) {
   return Number(record.totalAmount) - Number(record.amountPaid);
-}
-
-function totalItemQuantity(items: Array<{ quantity: number }>) {
-  return items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 }
 
 function isUnpaid(record: CreditRecord) {
@@ -783,6 +788,8 @@ export default function DashboardPage() {
       const existing = groups.get(key);
       const name = record.customer?.name || record.customerName;
       const phone = record.customer?.phone || record.customerPhone;
+      const unpaid = isUnpaid(record);
+      const unpaidItemRows = unpaid ? getUnpaidItemRowsForCredit(record) : [];
 
       if (!existing) {
         groups.set(key, {
@@ -790,19 +797,19 @@ export default function DashboardPage() {
           name,
           phone,
           credits: [record],
-          unpaidCredits: isUnpaid(record) ? [record] : [],
-          unpaidItems: isUnpaid(record) ? record.items : [],
-          totalUnpaid: isUnpaid(record) ? amountOwed(record) : 0,
-          earliestDueDate: isUnpaid(record) ? record.dueDate : null,
-          status: isUnpaid(record) ? record.status : "PAID",
+          unpaidCredits: unpaid ? [record] : [],
+          unpaidItems: unpaidItemRows,
+          totalUnpaid: unpaid ? amountOwed(record) : 0,
+          earliestDueDate: unpaid ? record.dueDate : null,
+          status: unpaid ? record.status : "PAID",
         });
         return;
       }
 
       existing.credits.push(record);
-      if (isUnpaid(record)) {
+      if (unpaid) {
         existing.unpaidCredits.push(record);
-        existing.unpaidItems.push(...record.items);
+        existing.unpaidItems.push(...unpaidItemRows);
         existing.totalUnpaid += amountOwed(record);
         if (
           !existing.earliestDueDate ||
@@ -943,11 +950,7 @@ export default function DashboardPage() {
   }, [toast]);
 
   if (isPending) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    );
+    return <AuthLoadingScreen />;
   }
 
   if (!session) {
@@ -2300,9 +2303,7 @@ export default function DashboardPage() {
             <div className="divide-y divide-gray-100">
               {isBusinessDashboard ? (
                 isSuppliersLoading ? (
-                  <div className="px-4 py-6 text-sm text-gray-500">
-                    Loading suppliers...
-                  </div>
+                  <InlineListSkeleton rows={4} />
                 ) : filteredSuppliers.length === 0 ? (
                   <div className="px-4 py-6 text-sm text-gray-500">
                     No suppliers found.
@@ -2332,9 +2333,7 @@ export default function DashboardPage() {
                   ))
                 )
               ) : isCustomersLoading ? (
-                <div className="px-4 py-6 text-sm text-gray-500">
-                  Loading customers...
-                </div>
+                <InlineListSkeleton rows={4} />
               ) : supplierCustomers.length === 0 ? (
                 <div className="px-4 py-6 text-sm text-gray-500">
                   No business customers yet.
@@ -3096,9 +3095,7 @@ export default function DashboardPage() {
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {isSuppliersLoading ? (
-                <div className="py-8 text-sm text-gray-500">
-                  Loading suppliers...
-                </div>
+                <InlineListSkeleton rows={4} framed />
               ) : filteredSuppliers.length === 0 ? (
                 <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                   No suppliers found.
@@ -3160,9 +3157,7 @@ export default function DashboardPage() {
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {isCustomersLoading ? (
-                <div className="py-8 text-sm text-gray-500">
-                  Loading customers...
-                </div>
+                <InlineListSkeleton rows={4} framed />
               ) : supplierCustomers.length === 0 ? (
                 <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                   No business customers yet. They will appear here after sending

@@ -1,10 +1,25 @@
 "use client";
 
 import { hasPendingAuthRedirect, useSession } from "@/lib/auth-client";
+import {
+  AuthLoadingScreen,
+  CreditorDetailSkeleton,
+} from "@/components/loading-states";
+import {
+  getUnpaidItemRowsForCredit,
+  totalItemQuantity,
+} from "@/lib/credit-items";
 import { normalizePhoneNumber } from "@/lib/phone";
 import type { RiskLevel } from "@/lib/risk-score";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 type CreditItem = {
   id: string;
@@ -66,7 +81,7 @@ type RiskScoreResult = {
   error?: string;
 };
 
-type DetailSection = "records" | "payments" | "items";
+type DetailSection = "details" | "records" | "payments" | "items";
 
 const statusLabels: Record<CreditRecord["status"], string> = {
   PENDING: "Pending",
@@ -99,10 +114,6 @@ function amountOwed(record: CreditRecord) {
 
 function isUnpaid(record: CreditRecord) {
   return record.status !== "PAID" && amountOwed(record) > 0;
-}
-
-function totalItemQuantity(items: Array<{ quantity: number }>) {
-  return items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 }
 
 function getCustomerKey(record: CreditRecord) {
@@ -200,22 +211,22 @@ function RiskSummaryCard({
 }) {
   if (isLoading) {
     return (
-      <section className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-blue-900">
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-blue-900">
         <p className="text-xs font-semibold uppercase">Holwa Trade Score</p>
         <p className="mt-2 text-sm">Checking debtor score...</p>
-      </section>
+      </div>
     );
   }
 
   if (!result || result.error) {
     return (
-      <section className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-gray-800">
+      <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-gray-800">
         <p className="text-xs font-semibold uppercase">Holwa Trade Score</p>
-        <p className="mt-3 text-2xl font-semibold">No score</p>
+        <p className="mt-2 text-xl font-semibold">No score</p>
         <p className="mt-1 text-sm">
           No Holwa trade score is available for this debtor yet.
         </p>
-      </section>
+      </div>
     );
   }
 
@@ -223,54 +234,97 @@ function RiskSummaryCard({
   const scoreText = result.score === null ? "No score" : `${result.score}/100`;
 
   return (
-    <section className={`rounded-xl border p-4 ${tone.card}`}>
+    <div className={`rounded-lg border p-4 ${tone.card}`}>
       <p className="text-xs font-semibold uppercase">Holwa Trade Score</p>
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-3xl font-semibold">{scoreText}</p>
+          <p className="text-2xl font-semibold">{scoreText}</p>
           <p className="mt-1 text-sm font-semibold">{result.riskLabel}</p>
         </div>
         <p className="text-sm font-medium sm:max-w-sm sm:text-right">
           {result.recommendation}
         </p>
       </div>
-    </section>
+    </div>
   );
 }
 
-function SectionButton({
+function DetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <span className="text-sm text-gray-500">{label}</span>
+      <span className="text-right text-sm font-medium text-gray-950">{value}</span>
+    </div>
+  );
+}
+
+function AccordionSection({
   title,
   body,
   meta,
   active,
   onClick,
+  children,
 }: {
   title: string;
   body: string;
   meta: string;
   active: boolean;
   onClick: () => void;
+  children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border bg-white p-4 text-left shadow-sm transition ${
-        active
-          ? "border-blue-300 ring-2 ring-blue-100"
-          : "border-gray-100 hover:border-blue-200 hover:bg-blue-50"
+    <section
+      className={`overflow-hidden rounded-xl border bg-white shadow-sm transition ${
+        active ? "border-blue-200" : "border-gray-100"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-blue-50"
+        aria-expanded={active}
+      >
         <div>
-          <h3 className="font-semibold text-gray-950">{title}</h3>
+          <h3 className="text-base font-semibold text-gray-950">{title}</h3>
           <p className="mt-1 text-sm text-gray-500">{body}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
-          {meta}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+            {meta}
+          </span>
+          <svg
+            className={`h-4 w-4 text-gray-500 transition-transform duration-300 ${
+              active ? "rotate-180" : ""
+            }`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </div>
+      </button>
+      <div
+        className={`grid transition-all duration-300 ease-out ${
+          active ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="border-t border-gray-100">{children}</div>
+        </div>
       </div>
-    </button>
+    </section>
   );
 }
 
@@ -287,7 +341,9 @@ export default function CreditorDetailPage() {
     message: string;
     variant: "success" | "warning";
   } | null>(null);
-  const [activeSection, setActiveSection] = useState<DetailSection | null>(null);
+  const [activeSection, setActiveSection] = useState<DetailSection | null>(
+    "details"
+  );
   const [riskResult, setRiskResult] = useState<RiskScoreResult | null>(null);
   const [isRiskLoading, setIsRiskLoading] = useState(false);
   const [paymentRecordId, setPaymentRecordId] = useState<string | null>(null);
@@ -315,11 +371,7 @@ export default function CreditorDetailPage() {
     }
 
     return group.unpaidCredits.flatMap((record) =>
-      record.items.map((item) => ({
-        ...item,
-        creditId: record.id,
-        dueDate: record.dueDate,
-      }))
+      getUnpaidItemRowsForCredit(record)
     );
   }, [group]);
 
@@ -329,14 +381,36 @@ export default function CreditorDetailPage() {
     }
 
     return group.credits
-      .flatMap((record) =>
-        (record.payments || []).map((payment) => ({
-          ...payment,
-          creditId: record.id,
-          dueDate: record.dueDate,
-          totalAmount: record.totalAmount,
-        }))
-      )
+      .flatMap((record) => {
+        let balanceBeforePayment = Number(record.totalAmount || 0);
+
+        return (record.payments || [])
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() -
+              new Date(b.createdAt).getTime()
+          )
+          .map((payment) => {
+            const paymentAmount = Number(payment.amount || 0);
+            const debtBeforePayment = Math.max(0, balanceBeforePayment);
+            const balanceAfterPayment = Math.max(
+              0,
+              balanceBeforePayment - paymentAmount
+            );
+
+            balanceBeforePayment = balanceAfterPayment;
+
+            return {
+              ...payment,
+              creditId: record.id,
+              dueDate: record.dueDate,
+              totalAmount: record.totalAmount,
+              debtBeforePayment,
+              balanceAfterPayment,
+            };
+          });
+      })
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -588,14 +662,16 @@ export default function CreditorDetailPage() {
     }
   };
 
-  if (isPending || isLoading) {
-    return (
-      <main className="min-h-screen bg-gray-50 px-4 py-8">
-        <div className="mx-auto max-w-5xl text-sm text-gray-500">
-          Loading creditor details...
-        </div>
-      </main>
-    );
+  if (isPending) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  if (isLoading) {
+    return <CreditorDetailSkeleton />;
   }
 
   if (error || !group) {
@@ -614,6 +690,14 @@ export default function CreditorDetailPage() {
       </main>
     );
   }
+
+  const detailsMeta = isRiskLoading
+    ? "Checking"
+    : riskResult && !riskResult.error
+    ? riskResult.score === null
+      ? riskResult.riskLabel
+      : `${riskResult.score}/100`
+    : statusLabels[group.status];
 
   return (
     <main className="min-h-screen bg-gray-50 pb-10">
@@ -635,65 +719,72 @@ export default function CreditorDetailPage() {
           </button>
         </div>
 
-        <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-blue-700">Creditor details</p>
-          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-950">{group.name}</h1>
-              <p className="mt-1 text-sm text-gray-500">{group.phone}</p>
+        <div className="space-y-3">
+          <AccordionSection
+            title="Creditor details"
+            body={`${group.name} · ${group.phone}`}
+            meta={detailsMeta}
+            active={activeSection === "details"}
+            onClick={() =>
+              setActiveSection(activeSection === "details" ? null : "details")
+            }
+          >
+            <div className="px-4 py-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-blue-700">
+                    Creditor details
+                  </p>
+                  <h1 className="mt-1 text-xl font-bold text-gray-950">
+                    {group.name}
+                  </h1>
+                </div>
+                {riskResult && !riskResult.error ? (
+                  <span
+                    className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                      getRiskTone(riskResult.riskLevel).badge
+                    }`}
+                  >
+                    {riskResult.score === null
+                      ? "No score"
+                      : `${riskResult.score}/100`}{" "}
+                    {riskResult.riskLabel}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-4 divide-y divide-gray-100">
+                <DetailRow label="Customer" value={group.name} />
+                <DetailRow label="Phone" value={group.phone} />
+                <DetailRow
+                  label="Total unpaid"
+                  value={formatMoney(group.totalUnpaid)}
+                />
+                <DetailRow
+                  label="Open credits"
+                  value={group.unpaidCredits.length}
+                />
+                <DetailRow
+                  label="Earliest due"
+                  value={
+                    group.earliestDueDate
+                      ? formatDate(group.earliestDueDate)
+                      : "None"
+                  }
+                />
+                <DetailRow label="Status" value={statusLabels[group.status]} />
+                <DetailRow
+                  label="Unpaid items"
+                  value={totalItemQuantity(unpaidItemRows)}
+                />
+              </div>
+
+              <div className="mt-4">
+                <RiskSummaryCard result={riskResult} isLoading={isRiskLoading} />
+              </div>
             </div>
-            {riskResult && !riskResult.error ? (
-              <span
-                className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
-                  getRiskTone(riskResult.riskLevel).badge
-                }`}
-              >
-                {riskResult.score === null ? "No score" : `${riskResult.score}/100`}{" "}
-                {riskResult.riskLabel}
-              </span>
-            ) : null}
-          </div>
-        </section>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Total unpaid</p>
-            <p className="mt-2 text-xl font-semibold text-gray-950">
-              {formatMoney(group.totalUnpaid)}
-            </p>
-          </section>
-          <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Open credits</p>
-            <p className="mt-2 text-xl font-semibold text-gray-950">
-              {group.unpaidCredits.length}
-            </p>
-          </section>
-          <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Earliest due</p>
-            <p className="mt-2 text-xl font-semibold text-gray-950">
-              {group.earliestDueDate ? formatDate(group.earliestDueDate) : "None"}
-            </p>
-          </section>
-          <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Status</p>
-            <p className="mt-2 text-xl font-semibold text-gray-950">
-              {statusLabels[group.status]}
-            </p>
-          </section>
-          <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">Unpaid items</p>
-            <p className="mt-2 text-xl font-semibold text-gray-950">
-              {totalItemQuantity(unpaidItemRows)}
-            </p>
-          </section>
-        </div>
-
-        <div className="mt-5">
-          <RiskSummaryCard result={riskResult} isLoading={isRiskLoading} />
-        </div>
-
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <SectionButton
+          </AccordionSection>
+          <AccordionSection
             title="Update credit records"
             body="Change status, record payment, send reminder, or delete a credit."
             meta={`${group.credits.length}`}
@@ -701,151 +792,49 @@ export default function CreditorDetailPage() {
             onClick={() =>
               setActiveSection(activeSection === "records" ? null : "records")
             }
-          />
-          <SectionButton
-            title="Payment history"
-            body="Review all payments made by this debtor."
-            meta={`${paymentRows.length}`}
-            active={activeSection === "payments"}
-            onClick={() =>
-              setActiveSection(activeSection === "payments" ? null : "payments")
-            }
-          />
-          <SectionButton
-            title="Unpaid items"
-            body="See goods and services still unpaid."
-            meta={`${totalItemQuantity(unpaidItemRows)}`}
-            active={activeSection === "items"}
-            onClick={() =>
-              setActiveSection(activeSection === "items" ? null : "items")
-            }
-          />
-        </div>
-
-        {!activeSection ? (
-          <p className="mt-5 rounded-xl border border-gray-100 bg-white px-4 py-5 text-sm text-gray-500 shadow-sm">
-            Choose an action above to open that section.
-          </p>
-        ) : null}
-
-        {activeSection === "items" ? (
-          <section className="mt-5 rounded-xl border border-gray-100 bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">Unpaid items</h2>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {unpaidItemRows.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-gray-500">
-                  No unpaid items.
-                </p>
-              ) : (
-                unpaidItemRows.map((item) => (
-                  <div
-                    key={`${item.creditId}-${item.id}`}
-                    className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-950">{item.name}</p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {item.quantity} x {formatMoney(Number(item.unitPrice))} ·
-                        due {formatDate(item.dueDate)}
-                      </p>
-                    </div>
-                    <p className="font-semibold text-gray-950">
-                      {formatMoney(Number(item.total))}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        ) : null}
-
-        {activeSection === "payments" ? (
-          <section className="mt-5 rounded-xl border border-gray-100 bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">
-                Payment history
-              </h2>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {paymentRows.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-gray-500">
-                  No payments recorded yet.
-                </p>
-              ) : (
-                paymentRows.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-950">
-                        {formatMoney(Number(payment.amount))}
-                      </p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {formatDate(payment.createdAt)}
-                        {payment.note ? ` · ${payment.note}` : ""}
-                      </p>
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      Credit due {formatDate(payment.dueDate)}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        ) : null}
-
-        {activeSection === "records" ? (
-          <section className="mt-5 rounded-xl border border-gray-100 bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-gray-950">
-                Update credit records
-              </h2>
-            </div>
+          >
             <div className="divide-y divide-gray-100">
               {group.credits.map((record) => {
                 const balance = Math.max(0, amountOwed(record));
                 const isPaymentFormOpen = paymentRecordId === record.id;
+                const recordUnpaidItems = getUnpaidItemRowsForCredit(record);
 
                 return (
-                  <div key={record.id} className="space-y-4 px-5 py-5">
+                  <div key={record.id} className="space-y-4 px-4 py-4">
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                       <div>
                         <p className="text-xs text-gray-500">Total</p>
-                        <p className="font-medium text-gray-950">
+                        <p className="text-sm font-medium text-gray-950">
                           {formatMoney(Number(record.totalAmount))}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Paid</p>
-                        <p className="font-medium text-gray-950">
+                        <p className="text-sm font-medium text-gray-950">
                           {formatMoney(Number(record.amountPaid))}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Balance</p>
-                        <p className="font-medium text-gray-950">
+                        <p className="text-sm font-medium text-gray-950">
                           {formatMoney(balance)}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Due date</p>
-                        <p className="font-medium text-gray-950">
+                        <p className="text-sm font-medium text-gray-950">
                           {formatDate(record.dueDate)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Items</p>
-                        <p className="font-medium text-gray-950">
-                          {totalItemQuantity(record.items)}
+                        <p className="text-xs text-gray-500">Unpaid items</p>
+                        <p className="text-sm font-medium text-gray-950">
+                          {totalItemQuantity(recordUnpaidItems)}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Created</p>
-                        <p className="font-medium text-gray-950">
+                        <p className="text-sm font-medium text-gray-950">
                           {formatDate(record.createdAt)}
                         </p>
                       </div>
@@ -963,8 +952,106 @@ export default function CreditorDetailPage() {
                 );
               })}
             </div>
-          </section>
-        ) : null}
+          </AccordionSection>
+
+          <AccordionSection
+            title="Payment history"
+            body="Review all payments made by this debtor."
+            meta={`${paymentRows.length}`}
+            active={activeSection === "payments"}
+            onClick={() =>
+              setActiveSection(activeSection === "payments" ? null : "payments")
+            }
+          >
+            <div className="divide-y divide-gray-100">
+              {paymentRows.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">
+                  No payments recorded yet.
+                </p>
+              ) : (
+                paymentRows.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-950">
+                        Paid {formatMoney(Number(payment.amount))}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {formatDate(payment.createdAt)}
+                        {payment.note ? ` · ${payment.note}` : ""}
+                      </p>
+                    </div>
+                    <div className="space-y-1 text-sm text-gray-500 sm:text-right">
+                      <p>
+                        Debt before payment{" "}
+                        <span className="font-medium text-gray-950">
+                          {formatMoney(Number(payment.debtBeforePayment))}
+                        </span>
+                      </p>
+                      <p>
+                        Balance after{" "}
+                        <span className="font-medium text-gray-950">
+                          {formatMoney(Number(payment.balanceAfterPayment))}
+                        </span>
+                      </p>
+                      <p>Credit due {formatDate(payment.dueDate)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </AccordionSection>
+
+          <AccordionSection
+            title="Unpaid items"
+            body="See goods and services still unpaid."
+            meta={`${totalItemQuantity(unpaidItemRows)}`}
+            active={activeSection === "items"}
+            onClick={() =>
+              setActiveSection(activeSection === "items" ? null : "items")
+            }
+          >
+            <div className="divide-y divide-gray-100">
+              {unpaidItemRows.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">
+                  No unpaid items.
+                </p>
+              ) : (
+                unpaidItemRows.map((item) => (
+                  <div
+                    key={`${item.creditId}-${item.id}`}
+                    className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-950">
+                        {item.name}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {item.quantity} unpaid x{" "}
+                        {formatMoney(Number(item.unitPrice))} · due{" "}
+                        {item.dueDate ? formatDate(item.dueDate) : "None"}
+                      </p>
+                      {Number(item.paidAmount) > 0 ? (
+                        <p className="mt-1 text-xs text-gray-500">
+                          {formatMoney(Number(item.paidAmount))} already paid
+                          from {item.originalQuantity} original items.
+                        </p>
+                      ) : null}
+                      <p className="mt-1 text-xs text-gray-400">
+                        Original value {formatMoney(Number(item.originalTotal))}
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-950">
+                      {formatMoney(Number(item.total))}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </AccordionSection>
+        </div>
       </div>
 
       {toast ? (

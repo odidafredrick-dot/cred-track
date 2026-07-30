@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { hasPendingAuthRedirect, signOut, useSession } from "@/lib/auth-client";
 import {
+  AuthLoadingScreen,
+  ProfilePageSkeleton,
+} from "@/components/loading-states";
+import {
   isUserRole,
   needsBusinessProfile,
   paymentModeLabels,
@@ -234,16 +238,16 @@ export default function ProfilePage() {
     }
   };
 
-  if (isPending || isLoadingProfile) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="text-lg text-gray-700">Loading...</div>
-      </div>
-    );
+  if (isPending) {
+    return <AuthLoadingScreen />;
   }
 
   if (!session) {
     return null;
+  }
+
+  if (isLoadingProfile) {
+    return <ProfilePageSkeleton />;
   }
 
   return (

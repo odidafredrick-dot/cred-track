@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import {
+  AuthLoadingScreen,
+  SupplierStoreSkeleton,
+} from "@/components/loading-states";
 import { roleLabels, type PaymentMode, type UserRole } from "@/lib/user-profile";
 
 type UserProfile = {
@@ -211,14 +215,16 @@ export default function SupplierStorePage() {
     }
   };
 
-  if (isPending || isLoading) {
-    return (
-      <main className="min-h-screen bg-gray-50 px-4 py-8">
-        <div className="mx-auto max-w-6xl text-sm text-gray-500">
-          Loading supplier store...
-        </div>
-      </main>
-    );
+  if (isPending) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  if (isLoading) {
+    return <SupplierStoreSkeleton />;
   }
 
   if (error && !supplier) {
