@@ -185,6 +185,9 @@ model CreditTopup {
   status        TopupStatus @default(PENDING)
   apiRef        String      @unique
   invoiceId     String?
+  resultCode    Int?
+  resultDescription String? @db.Text
+  completedAt   DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }

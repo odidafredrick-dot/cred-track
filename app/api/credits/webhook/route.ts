@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
   }
 
   const resultCode = Number(stkCallback.ResultCode);
+  const resultDescription =
+    stkCallback.ResultDesc || `Safaricom returned result code ${resultCode}`;
 
   if (resultCode === 0) {
     const metadata = extractDarajaCallbackMetadata(stkCallback);
@@ -57,7 +59,12 @@ export async function POST(request: NextRequest) {
       });
       await prisma.creditTopup.update({
         where: { id: topup.id },
-        data: { status: "FAILED" },
+        data: {
+          status: "FAILED",
+          resultCode,
+          resultDescription: "M-Pesa confirmation had an invalid amount.",
+          completedAt: new Date(),
+        },
       });
       return darajaAck();
     }
@@ -70,7 +77,12 @@ export async function POST(request: NextRequest) {
       });
       await prisma.creditTopup.update({
         where: { id: topup.id },
-        data: { status: "FAILED" },
+        data: {
+          status: "FAILED",
+          resultCode,
+          resultDescription: "M-Pesa confirmation amount did not match.",
+          completedAt: new Date(),
+        },
       });
       return darajaAck();
     }
@@ -82,7 +94,12 @@ export async function POST(request: NextRequest) {
     await prisma.$transaction([
       prisma.creditTopup.update({
         where: { id: topup.id },
-        data: { status: "PAID" },
+        data: {
+          status: "PAID",
+          resultCode,
+          resultDescription,
+          completedAt: new Date(),
+        },
       }),
       prisma.creditBalance.upsert({
         where: { userId: topup.userId },
@@ -93,7 +110,12 @@ export async function POST(request: NextRequest) {
   } else {
     await prisma.creditTopup.update({
       where: { id: topup.id },
-      data: { status: "FAILED" },
+      data: {
+        status: "FAILED",
+        resultCode: Number.isFinite(resultCode) ? resultCode : null,
+        resultDescription,
+        completedAt: new Date(),
+      },
     });
   }
 

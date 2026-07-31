@@ -154,6 +154,32 @@ type SupplierCustomer = {
   stockItems: SupplierCustomerStockItem[];
 };
 
+type TopupStage =
+  | "idle"
+  | "sending"
+  | "waiting"
+  | "success"
+  | "failed"
+  | "cancelled"
+  | "timeout";
+
+type TopupTone = "info" | "success" | "warning" | "error";
+
+type TopupStatusState = {
+  stage: TopupStage;
+  tone: TopupTone;
+  title: string;
+  message: string;
+  topupId?: string;
+};
+
+type TopupStatusResponse = {
+  displayStatus: "PENDING" | "SUCCESS" | "FAILED" | "CANCELLED" | "TIMEOUT";
+  message?: string;
+  balance?: number;
+  creditsAdded?: number;
+};
+
 const today = new Date();
 const selectedRoleStorageKey = "holwa:selected-role";
 const emptyProfileForm: ProfileForm = {
@@ -164,6 +190,18 @@ const emptyProfileForm: ProfileForm = {
   phoneNumber: "",
   paymentMode: "",
   description: "",
+};
+const initialTopupStatus: TopupStatusState = {
+  stage: "idle",
+  tone: "info",
+  title: "Reminder credits",
+  message: "Each Ksh 1 adds 1 reminder credit.",
+};
+const topupToneClasses: Record<TopupTone, string> = {
+  info: "border-blue-100 bg-blue-50 text-blue-800",
+  success: "border-emerald-100 bg-emerald-50 text-emerald-800",
+  warning: "border-amber-100 bg-amber-50 text-amber-800",
+  error: "border-red-100 bg-red-50 text-red-700",
 };
 
 function formatMoney(amount: number) {
@@ -425,6 +463,8 @@ export default function DashboardPage() {
   const [topupPhone, setTopupPhone] = useState("");
   const [topupAmount, setTopupAmount] = useState("1");
   const [isTopupSubmitting, setIsTopupSubmitting] = useState(false);
+  const [topupStatus, setTopupStatus] =
+    useState<TopupStatusState>(initialTopupStatus);
   const [isStockDialogOpen, setIsStockDialogOpen] = useState(false);
   const [isStockSubmitting, setIsStockSubmitting] = useState(false);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
@@ -497,6 +537,33 @@ export default function DashboardPage() {
   const canDismissProfileDialog = userProfile
     ? hasBusinessProfileDetails(userProfile)
     : false;
+  const isTopupInProgress =
+    topupStatus.stage === "sending" || topupStatus.stage === "waiting";
+  const isTopupFinal =
+    topupStatus.stage === "success" ||
+    topupStatus.stage === "failed" ||
+    topupStatus.stage === "cancelled" ||
+    topupStatus.stage === "timeout";
+
+  const openTopupDialog = () => {
+    setTopupStatus(initialTopupStatus);
+    setIsTopupOpen(true);
+  };
+
+  const closeTopupDialog = async () => {
+    if (isTopupInProgress) {
+      return;
+    }
+
+    await refreshCreditData();
+    setIsTopupOpen(false);
+    setTopupStatus(initialTopupStatus);
+
+    if (isTopupFinal) {
+      setTopupPhone("");
+      setTopupAmount("1");
+    }
+  };
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -638,20 +705,24 @@ export default function DashboardPage() {
     };
   }, [session?.user?.id]);
 
-  useEffect(() => {
+  async function refreshCreditData() {
     if (!session?.user?.id) {
       return;
     }
 
-    const fetchCredits = async () => {
-      const response = await fetch(`/api/credits?userId=${session.user.id}`);
-      if (!response.ok) {
-        return;
-      }
-      const data = await response.json();
-      setCredits(data.credits || []);
-      setReminderBalance(Number(data.balance || 0));
-    };
+    const response = await fetch(`/api/credits?userId=${session.user.id}`);
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    setCredits(data.credits || []);
+    setReminderBalance(Number(data.balance || 0));
+  }
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      return;
+    }
 
     const fetchStock = async () => {
       const response = await fetch(`/api/stock?userId=${session.user.id}`);
@@ -662,7 +733,7 @@ export default function DashboardPage() {
       setStockItems(data.items || []);
     };
 
-    fetchCredits();
+    void refreshCreditData();
     fetchStock();
   }, [session?.user?.id]);
 
@@ -955,6 +1026,138 @@ export default function DashboardPage() {
     const timer = window.setTimeout(() => setToast(null), 3000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (topupStatus.stage !== "waiting" || !topupStatus.topupId) {
+      return;
+    }
+
+    let isActive = true;
+    let timer: number | undefined;
+
+    const pollTopupStatus = async () => {
+      try {
+        const response = await fetch(
+          `/api/credits/topup/status?topupId=${encodeURIComponent(
+            topupStatus.topupId || ""
+          )}`
+        );
+        const data = (await response.json().catch(() => ({}))) as
+          | TopupStatusResponse
+          | { error?: string };
+
+        if (!isActive) {
+          return;
+        }
+
+        if (!response.ok) {
+          setTopupStatus({
+            stage: "failed",
+            tone: "error",
+            title: "Could not confirm payment",
+            message:
+              "Payment status could not be checked. Please close and check your reminder balance.",
+            topupId: topupStatus.topupId,
+          });
+          return;
+        }
+
+        const statusData = data as TopupStatusResponse;
+        if (statusData.balance !== undefined) {
+          setReminderBalance(Number(statusData.balance));
+        }
+
+        if (statusData.displayStatus === "SUCCESS") {
+          setTopupStatus({
+            stage: "success",
+            tone: "success",
+            title: "Payment successful",
+            message:
+              statusData.message ||
+              "Payment successful. Reminder credits have been added.",
+            topupId: topupStatus.topupId,
+          });
+          return;
+        }
+
+        if (statusData.displayStatus === "CANCELLED") {
+          setTopupStatus({
+            stage: "cancelled",
+            tone: "warning",
+            title: "Payment cancelled",
+            message:
+              statusData.message ||
+              "Payment cancelled. No reminder credits were added.",
+            topupId: topupStatus.topupId,
+          });
+          return;
+        }
+
+        if (statusData.displayStatus === "FAILED") {
+          setTopupStatus({
+            stage: "failed",
+            tone: "error",
+            title: "Payment failed",
+            message:
+              statusData.message ||
+              "Payment failed. No reminder credits were added.",
+            topupId: topupStatus.topupId,
+          });
+          return;
+        }
+
+        if (statusData.displayStatus === "TIMEOUT") {
+          setTopupStatus({
+            stage: "timeout",
+            tone: "warning",
+            title: "Still waiting",
+            message:
+              statusData.message ||
+              "Payment confirmation is taking too long. Close and check your balance shortly.",
+            topupId: topupStatus.topupId,
+          });
+          return;
+        }
+
+        setTopupStatus((current) =>
+          current.stage === "waiting"
+            ? {
+                ...current,
+                message:
+                  statusData.message ||
+                  "Waiting for Safaricom confirmation. Check your phone and enter your M-Pesa PIN.",
+              }
+            : current
+        );
+      } catch {
+        if (!isActive) {
+          return;
+        }
+        setTopupStatus((current) =>
+          current.stage === "waiting"
+            ? {
+                ...current,
+                message:
+                  "Still checking payment status. Keep this card open while we wait for Safaricom.",
+              }
+            : current
+        );
+      }
+
+      if (isActive) {
+        timer = window.setTimeout(pollTopupStatus, 3000);
+      }
+    };
+
+    timer = window.setTimeout(pollTopupStatus, 2500);
+
+    return () => {
+      isActive = false;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [topupStatus.stage, topupStatus.topupId]);
 
   if (isPending) {
     return <AuthLoadingScreen />;
@@ -1532,6 +1735,10 @@ export default function DashboardPage() {
     if (!session?.user?.id) {
       return;
     }
+    if (isTopupInProgress) {
+      return;
+    }
+
     const topupPhoneValue = topupPhone.trim();
     const cleanTopupPhone = topupPhoneValue.replace(/[\s-]/g, "");
     const isKenyanPhone =
@@ -1540,22 +1747,32 @@ export default function DashboardPage() {
       /^7\d{8}$/.test(cleanTopupPhone);
 
     if (!isKenyanPhone) {
-      setToast({
+      setTopupStatus({
+        stage: "idle",
+        tone: "error",
+        title: "Check phone number",
         message: "Enter a valid M-Pesa number, for example 07... or +254...",
-        variant: "warning",
       });
       return;
     }
     const amount = Number(topupAmount);
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
-      setToast({
+      setTopupStatus({
+        stage: "idle",
+        tone: "error",
+        title: "Check amount",
         message: "Amount must be a whole KES amount.",
-        variant: "warning",
       });
       return;
     }
 
     setIsTopupSubmitting(true);
+    setTopupStatus({
+      stage: "sending",
+      tone: "info",
+      title: "Sending STK push",
+      message: "Contacting Safaricom. Keep this card open.",
+    });
     try {
       const response = await fetch("/api/credits/topup", {
         method: "POST",
@@ -1570,22 +1787,42 @@ export default function DashboardPage() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setToast({
+        setTopupStatus({
+          stage: "failed",
+          tone: "error",
+          title: "Could not start payment",
           message: data?.error || "Failed to start STK push.",
-          variant: "warning",
         });
         return;
       }
-      setToast({
-        message: "STK Push sent. Confirm on your phone.",
-        variant: "success",
+      if (!data?.topupId) {
+        setTopupStatus({
+          stage: "failed",
+          tone: "error",
+          title: "Could not track payment",
+          message: "STK push started, but Holwa could not track the payment status.",
+        });
+        return;
+      }
+      setTopupStatus({
+        stage: "waiting",
+        tone: "info",
+        title: "Waiting for M-Pesa",
+        message:
+          data?.message ||
+          "STK push sent. Check your phone and enter your M-Pesa PIN.",
+        topupId: data?.topupId,
       });
       if (data?.balance !== undefined) {
         setReminderBalance(Number(data.balance));
       }
-      setIsTopupOpen(false);
-      setTopupPhone("");
-      setTopupAmount("1");
+    } catch {
+      setTopupStatus({
+        stage: "failed",
+        tone: "error",
+        title: "Network error",
+        message: "Network error while starting payment. Please try again.",
+      });
     } finally {
       setIsTopupSubmitting(false);
     }
@@ -2044,7 +2281,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => {
                   setIsMobileMenuOpen(false);
-                  setIsTopupOpen(true);
+                  openTopupDialog();
                 }}
                 className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
               >
@@ -2125,7 +2362,7 @@ export default function DashboardPage() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => setIsTopupOpen(true)}
+                    onClick={openTopupDialog}
                     className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"
                   >
                     Recharge
@@ -2504,7 +2741,7 @@ export default function DashboardPage() {
                 {reminderBalance}
               </h2>
               <button
-                onClick={() => setIsTopupOpen(true)}
+                onClick={openTopupDialog}
                 className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
               >
                 Recharge
@@ -3464,8 +3701,11 @@ export default function DashboardPage() {
                 Load Credits
               </h3>
               <button
-                onClick={() => setIsTopupOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
+                type="button"
+                onClick={() => void closeTopupDialog()}
+                disabled={isTopupInProgress}
+                className="text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Close load credits"
               >
                 ✕
               </button>
@@ -3480,6 +3720,7 @@ export default function DashboardPage() {
                   value={topupPhone}
                   onChange={(event) => setTopupPhone(event.target.value)}
                   placeholder="07... or +254..."
+                  disabled={isTopupInProgress || isTopupFinal}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
@@ -3494,28 +3735,55 @@ export default function DashboardPage() {
                   step="1"
                   value={topupAmount}
                   onChange={(event) => setTopupAmount(event.target.value)}
+                  disabled={isTopupInProgress || isTopupFinal}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   required
                 />
               </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Each Ksh 1 adds 1 reminder credit.
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm ${topupToneClasses[topupStatus.tone]}`}
+                role={topupStatus.tone === "error" ? "alert" : "status"}
+              >
+                <p className="font-semibold">{topupStatus.title}</p>
+                <p className="mt-1">{topupStatus.message}</p>
+                {isTopupInProgress ? (
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/70">
+                    <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-700" />
+                  </div>
+                ) : null}
               </div>
               <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsTopupOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isTopupSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
-                >
-                  {isTopupSubmitting ? "Sending..." : "Send STK Push"}
-                </button>
+                {isTopupFinal ? (
+                  <button
+                    type="button"
+                    onClick={() => void closeTopupDialog()}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                  >
+                    Close
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void closeTopupDialog()}
+                      disabled={isTopupInProgress}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isTopupSubmitting || isTopupInProgress}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {topupStatus.stage === "sending"
+                        ? "Sending..."
+                        : topupStatus.stage === "waiting"
+                        ? "Waiting..."
+                        : "Send STK Push"}
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>

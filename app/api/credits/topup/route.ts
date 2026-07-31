@@ -105,6 +105,10 @@ export async function POST(request: NextRequest) {
       topupId: topup.id,
       checkoutId,
       merchantRequestId: response.MerchantRequestID || null,
+      status: "PENDING",
+      message:
+        response.CustomerMessage ||
+        "STK push sent. Check your phone and enter your M-Pesa PIN.",
     });
   } catch (error) {
     console.error("[Topup] STK push failed", {
@@ -115,7 +119,12 @@ export async function POST(request: NextRequest) {
 
     await prisma.creditTopup.update({
       where: { id: topup.id },
-      data: { status: "FAILED" },
+      data: {
+        status: "FAILED",
+        resultDescription:
+          error instanceof Error ? error.message : "STK push failed",
+        completedAt: new Date(),
+      },
     });
 
     return NextResponse.json(
