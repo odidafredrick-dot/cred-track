@@ -7,28 +7,67 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { useRouter } from "next/navigation";
 
 type AdminTab = "analytics" | "users" | "pricing" | "operations";
+type AnalyticsPeriod = "7d" | "30d" | "90d" | "year";
+type AnalyticsGroupBy = "day" | "week" | "month";
 
 type OverviewData = {
   generatedAt: string;
+  period: {
+    key: AnalyticsPeriod;
+    days: number;
+    groupBy: AnalyticsGroupBy;
+    currentStart: string;
+    previousStart: string;
+    previousEnd: string;
+  };
   kpis: {
     totalUsers: number;
     usersByRole: Record<string, number>;
     activeBusinesses: number;
     activeSuppliers: number;
     totalCreditsIssued: number;
+    periodCreditsIssuedCount: number;
+    periodCreditsIssuedAmount: number;
     amountOutstanding: number;
     amountOverdue: number;
     overdueCount: number;
     paymentsCollected: number;
+    periodPaymentsCollected: number;
+    periodPaymentCount: number;
     lowStockCount: number;
     supplierOrderCount: number;
     supplierOrderAmount: number;
     riskChecks30d: number;
+    periodRiskChecks: number;
+    periodAverageRiskScore: number | null;
+    riskLevelCounts: {
+      safe: number;
+      review: number;
+      high: number;
+      noHistory: number;
+    };
+  };
+  comparisons: {
+    creditsIssuedAmountPct: number | null;
+    creditsIssuedCountPct: number | null;
+    paymentsCollectedPct: number | null;
+    paymentCountPct: number | null;
+    riskChecksPct: number | null;
+    riskAverageScoreDelta: number | null;
   };
   trends: {
-    creditsIssued: Array<{ date: string; value: number }>;
-    paymentsCollected: Array<{ date: string; value: number }>;
-    riskScore: Array<{ date: string; checks: number; averageScore: number | null }>;
+    creditsIssued: Array<{ date: string; label: string; value: number; count: number }>;
+    paymentsCollected: Array<{ date: string; label: string; value: number; count: number }>;
+    riskScore: Array<{
+      date: string;
+      label: string;
+      checks: number;
+      averageScore: number | null;
+      safe: number;
+      review: number;
+      high: number;
+      noHistory: number;
+    }>;
   };
   topCustomers: Array<{
     name: string;
@@ -138,6 +177,19 @@ const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "operations", label: "Operations" },
 ];
 
+const periodOptions: Array<{ id: AnalyticsPeriod; label: string }> = [
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
+  { id: "90d", label: "90 days" },
+  { id: "year", label: "This year" },
+];
+
+const groupOptions: Array<{ id: AnalyticsGroupBy; label: string }> = [
+  { id: "day", label: "Daily" },
+  { id: "week", label: "Weekly" },
+  { id: "month", label: "Monthly" },
+];
+
 const emptyPriceForm = {
   name: "",
   scope: "GLOBAL",
@@ -164,6 +216,17 @@ function formatNumber(value: number | string | null | undefined) {
   );
 }
 
+function formatCompactNumber(value: number | string | null | undefined) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Number(value || 0));
+}
+
+function formatCompactMoney(value: number | string | null | undefined) {
+  return `KES ${formatCompactNumber(value)}`;
+}
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString();
 }
@@ -185,6 +248,30 @@ function numberOrNull(value: string) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareText(value: number | null, noun = "previous") {
+  if (value === null) {
+    return "New activity";
+  }
+
+  if (value === 0) {
+    return `No change vs ${noun}`;
+  }
+
+  return `${value > 0 ? "+" : ""}${value}% vs ${noun}`;
+}
+
+function scoreDeltaText(value: number | null) {
+  if (value === null) {
+    return "No prior score";
+  }
+
+  if (value === 0) {
+    return "No score change";
+  }
+
+  return `${value > 0 ? "+" : ""}${value} score points`;
 }
 
 function KpiCard({
@@ -257,39 +344,201 @@ function SectionTitle({
   );
 }
 
-function MiniBarChart({
+function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ id: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg bg-gray-100 p-1">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+            value === option.id
+              ? "bg-white text-blue-700 shadow-sm"
+              : "text-gray-600 hover:text-blue-700"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TimeSeriesBarChart({
   rows,
   mode = "number",
+  emptyText,
+  countLabel,
 }: {
-  rows: Array<{ date: string; value: number | null }>;
+  rows: Array<{ date: string; label: string; value: number; count: number }>;
   mode?: "number" | "money" | "score";
+  emptyText: string;
+  countLabel: string;
 }) {
-  const max = Math.max(1, ...rows.map((row) => Number(row.value || 0)));
+  const max = Math.max(0, ...rows.map((row) => Number(row.value || 0)));
+
+  if (max <= 0) {
+    return (
+      <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 text-center">
+        <p className="text-sm text-gray-500">{emptyText}</p>
+      </div>
+    );
+  }
+
+  const valueText = (value: number) =>
+    mode === "money"
+      ? formatMoney(value)
+      : mode === "score"
+      ? `${formatNumber(value)}/100`
+      : formatNumber(value);
+  const labelStep = Math.max(1, Math.ceil(rows.length / 10));
 
   return (
-    <div className="flex h-32 items-end gap-2">
-      {rows.map((row) => {
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>0</span>
+        <span>{mode === "money" ? formatCompactMoney(max) : valueText(max)}</span>
+      </div>
+      <div className="flex h-40 items-end gap-2 border-b border-gray-100">
+      {rows.map((row, index) => {
         const value = Number(row.value || 0);
-        const height = Math.max(8, (value / max) * 100);
+        const height = value > 0 ? Math.max(8, (value / max) * 100) : 0;
         return (
           <div key={row.date} className="flex flex-1 flex-col items-center gap-2">
             <div
-              className="w-full rounded-t bg-blue-600/80"
+              className="w-full rounded-t bg-blue-600/80 transition-all"
               style={{ height: `${height}%` }}
-              title={`${row.date}: ${
-                mode === "money"
-                  ? formatMoney(value)
-                  : mode === "score"
-                  ? `${value}/100`
-                  : formatNumber(value)
-              }`}
+              title={`${row.label}: ${valueText(value)} · ${row.count} ${countLabel}`}
             />
-            <span className="hidden text-[10px] text-gray-400 sm:inline">
-              {row.date.slice(5)}
+            <span className="hidden max-w-14 text-center text-[10px] leading-tight text-gray-400 sm:inline">
+              {index % labelStep === 0 || index === rows.length - 1 ? row.label : ""}
             </span>
           </div>
         );
       })}
+      </div>
+    </div>
+  );
+}
+
+function RiskTrendChart({
+  rows,
+  emptyText,
+}: {
+  rows: OverviewData["trends"]["riskScore"];
+  emptyText: string;
+}) {
+  const scoredRows = rows.filter((row) => row.averageScore !== null);
+  const hasChecks = rows.some((row) => row.checks > 0);
+
+  if (!hasChecks) {
+    return (
+      <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 text-center">
+        <p className="text-sm text-gray-500">{emptyText}</p>
+      </div>
+    );
+  }
+
+  const width = 360;
+  const height = 150;
+  const chartTop = 18;
+  const chartBottom = 118;
+  const xForIndex = (index: number) =>
+    rows.length <= 1 ? width / 2 : 16 + (index / (rows.length - 1)) * (width - 32);
+  const yForScore = (score: number) =>
+    chartBottom - (Math.max(0, Math.min(100, score)) / 100) * (chartBottom - chartTop);
+  const points = rows
+    .map((row, index) =>
+      row.averageScore === null
+        ? null
+        : `${xForIndex(index)},${yForScore(row.averageScore)}`
+    )
+    .filter(Boolean)
+    .join(" ");
+  const labelStep = Math.max(1, Math.ceil(rows.length / 10));
+
+  return (
+    <div className="space-y-3">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
+        <rect x="0" y="0" width={width} height={height} rx="12" fill="#f8fafc" />
+        {[25, 50, 75, 100].map((score) => (
+          <line
+            key={score}
+            x1="16"
+            x2={width - 16}
+            y1={yForScore(score)}
+            y2={yForScore(score)}
+            stroke="#e5e7eb"
+            strokeDasharray="4 4"
+          />
+        ))}
+        {points ? (
+          <polyline
+            points={points}
+            fill="none"
+            stroke="#2563eb"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="3"
+          />
+        ) : null}
+        {rows.map((row, index) =>
+          row.averageScore === null ? null : (
+            <circle
+              key={row.date}
+              cx={xForIndex(index)}
+              cy={yForScore(row.averageScore)}
+              r="4"
+              fill="#ffffff"
+              stroke="#2563eb"
+              strokeWidth="2"
+            >
+              <title>{`${row.label}: ${row.averageScore}/100 · ${row.checks} checks`}</title>
+            </circle>
+          )
+        )}
+        {rows.map((row, index) =>
+          index % labelStep === 0 || index === rows.length - 1 ? (
+            <text
+              key={`${row.date}-label`}
+              x={xForIndex(index)}
+              y="140"
+              textAnchor="middle"
+              className="fill-gray-400 text-[9px]"
+            >
+              {row.label}
+            </text>
+          ) : null
+        )}
+      </svg>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <StatusPill tone="emerald">
+          Safe {rows.reduce((sum, row) => sum + row.safe, 0)}
+        </StatusPill>
+        <StatusPill tone="amber">
+          Review {rows.reduce((sum, row) => sum + row.review, 0)}
+        </StatusPill>
+        <StatusPill tone="red">
+          High risk {rows.reduce((sum, row) => sum + row.high, 0)}
+        </StatusPill>
+        <StatusPill tone="gray">
+          No history {rows.reduce((sum, row) => sum + row.noHistory, 0)}
+        </StatusPill>
+      </div>
+      {scoredRows.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          Risk checks exist, but none had enough history for an average score.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -304,6 +553,8 @@ export default function AdminPage() {
   const session = sessionResult.data;
   const isPending = sessionResult.isPending;
   const [activeTab, setActiveTab] = useState<AdminTab>("analytics");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30d");
+  const [analyticsGroupBy, setAnalyticsGroupBy] = useState<AnalyticsGroupBy>("day");
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [priceRules, setPriceRules] = useState<PriceRule[]>([]);
@@ -333,7 +584,9 @@ export default function AdminPage() {
     try {
       const [overviewResponse, usersResponse, priceResponse, operationsResponse] =
         await Promise.all([
-          fetch("/api/admin/overview"),
+          fetch(
+            `/api/admin/overview?period=${analyticsPeriod}&groupBy=${analyticsGroupBy}`
+          ),
           fetch("/api/admin/users"),
           fetch("/api/admin/price-rules"),
           fetch("/api/admin/operations"),
@@ -392,7 +645,7 @@ export default function AdminPage() {
     if (session?.user?.id) {
       void loadAdmin();
     }
-  }, [isPending, session?.user?.id]);
+  }, [analyticsGroupBy, analyticsPeriod, isPending, session?.user?.id]);
 
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase();
@@ -587,7 +840,13 @@ export default function AdminPage() {
         ) : null}
 
         {activeTab === "analytics" && overview ? (
-          <AnalyticsTab overview={overview} />
+          <AnalyticsTab
+            overview={overview}
+            period={analyticsPeriod}
+            groupBy={analyticsGroupBy}
+            setPeriod={setAnalyticsPeriod}
+            setGroupBy={setAnalyticsGroupBy}
+          />
         ) : null}
 
         {activeTab === "users" ? (
@@ -630,15 +889,68 @@ export default function AdminPage() {
   );
 }
 
-function AnalyticsTab({ overview }: { overview: OverviewData }) {
-  const riskRows = overview.trends.riskScore.map((row) => ({
-    date: row.date,
-    value: row.averageScore,
-  }));
+function AnalyticsTab({
+  overview,
+  period,
+  groupBy,
+  setPeriod,
+  setGroupBy,
+}: {
+  overview: OverviewData;
+  period: AnalyticsPeriod;
+  groupBy: AnalyticsGroupBy;
+  setPeriod: (value: AnalyticsPeriod) => void;
+  setGroupBy: (value: AnalyticsGroupBy) => void;
+}) {
+  const periodLabel =
+    periodOptions.find((option) => option.id === period)?.label || "30 days";
+  const groupLabel =
+    groupOptions.find((option) => option.id === groupBy)?.label || "Daily";
+  const riskScore = overview.kpis.periodAverageRiskScore;
+  const riskTone =
+    riskScore === null
+      ? "blue"
+      : riskScore >= 80
+      ? "emerald"
+      : riskScore >= 60
+      ? "amber"
+      : "red";
+  const updatePeriod = (nextPeriod: AnalyticsPeriod) => {
+    setPeriod(nextPeriod);
+    setGroupBy(nextPeriod === "year" ? "month" : nextPeriod === "90d" ? "week" : "day");
+  };
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">
+              Analytics overview
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Showing {periodLabel.toLowerCase()} grouped {groupLabel.toLowerCase()}.
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              Current period starts {formatDate(overview.period.currentStart)}.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <SegmentedControl
+              value={period}
+              options={periodOptions}
+              onChange={updatePeriod}
+            />
+            <SegmentedControl
+              value={groupBy}
+              options={groupOptions}
+              onChange={setGroupBy}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           label="Total users"
           value={formatNumber(overview.kpis.totalUsers)}
@@ -648,14 +960,34 @@ function AnalyticsTab({ overview }: { overview: OverviewData }) {
         <KpiCard
           label="Outstanding"
           value={formatMoney(overview.kpis.amountOutstanding)}
-          detail={`${overview.kpis.overdueCount} overdue credits`}
+          detail={`${overview.kpis.overdueCount} overdue · ${formatMoney(
+            overview.kpis.amountOverdue
+          )}`}
           tone={overview.kpis.amountOverdue > 0 ? "amber" : "emerald"}
         />
         <KpiCard
+          label="Credits issued"
+          value={formatMoney(overview.kpis.periodCreditsIssuedAmount)}
+          detail={`${formatNumber(
+            overview.kpis.periodCreditsIssuedCount
+          )} records · ${compareText(overview.comparisons.creditsIssuedAmountPct)}`}
+          tone="blue"
+        />
+        <KpiCard
           label="Payments collected"
-          value={formatMoney(overview.kpis.paymentsCollected)}
-          detail={`${formatNumber(overview.kpis.totalCreditsIssued)} credits issued`}
+          value={formatMoney(overview.kpis.periodPaymentsCollected)}
+          detail={`${formatNumber(
+            overview.kpis.periodPaymentCount
+          )} payments · ${compareText(overview.comparisons.paymentsCollectedPct)}`}
           tone="emerald"
+        />
+        <KpiCard
+          label="Risk score"
+          value={riskScore === null ? "No score" : `${riskScore}/100`}
+          detail={`${formatNumber(overview.kpis.periodRiskChecks)} checks · ${scoreDeltaText(
+            overview.comparisons.riskAverageScoreDelta
+          )}`}
+          tone={riskTone}
         />
         <KpiCard
           label="Supplier orders"
@@ -667,19 +999,50 @@ function AnalyticsTab({ overview }: { overview: OverviewData }) {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-          <SectionTitle title="Credits issued" />
-          <MiniBarChart rows={overview.trends.creditsIssued} />
+          <SectionTitle
+            title="Credits issued"
+            action={
+              <StatusPill tone="blue">
+                {formatNumber(overview.kpis.periodCreditsIssuedCount)} records
+              </StatusPill>
+            }
+          />
+          <TimeSeriesBarChart
+            rows={overview.trends.creditsIssued}
+            mode="money"
+            countLabel="records"
+            emptyText="No goods/services credit was issued in this period."
+          />
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-          <SectionTitle title="Payments collected" />
-          <MiniBarChart rows={overview.trends.paymentsCollected} mode="money" />
+          <SectionTitle
+            title="Payments collected"
+            action={
+              <StatusPill tone="emerald">
+                {formatNumber(overview.kpis.periodPaymentCount)} payments
+              </StatusPill>
+            }
+          />
+          <TimeSeriesBarChart
+            rows={overview.trends.paymentsCollected}
+            mode="money"
+            countLabel="payments"
+            emptyText="No payments were collected in this period."
+          />
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-          <SectionTitle title="Risk-score trend" />
-          <MiniBarChart rows={riskRows} mode="score" />
-          <p className="mt-3 text-sm text-gray-500">
-            {overview.kpis.riskChecks30d} checks in the last 30 days.
-          </p>
+          <SectionTitle
+            title="Risk-score trend"
+            action={
+              <StatusPill tone={riskTone}>
+                {formatNumber(overview.kpis.periodRiskChecks)} checks
+              </StatusPill>
+            }
+          />
+          <RiskTrendChart
+            rows={overview.trends.riskScore}
+            emptyText="No Holwa score checks were made in this period."
+          />
         </div>
       </section>
 
