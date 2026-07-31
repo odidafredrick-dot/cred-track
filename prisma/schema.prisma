@@ -34,6 +34,12 @@ enum UserRole {
   ADMIN
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
 enum PaymentMode {
   POCHI
   PAY_BILL
@@ -72,25 +78,33 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  accounts  Account[]
-  sessions  Session[]
+  accounts Account[]
+  sessions Session[]
+  profile  UserProfile?
 }
 
 model UserProfile {
   id           String       @id @default(cuid())
   userId       String       @unique
   role         UserRole
+  status       UserStatus   @default(ACTIVE)
   businessName String?
+  businessType String?
+  currentPlan  String?
   county       String?
   town         String?
   estate       String?
   phoneNumber  String?
+  phoneVerified Boolean      @default(false)
   paymentMode  PaymentMode?
   description  String?      @db.Text
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([role])
+  @@index([status])
 }
 
 model Customer {

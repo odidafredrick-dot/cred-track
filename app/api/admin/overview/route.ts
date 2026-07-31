@@ -178,11 +178,13 @@ export async function GET(request: NextRequest) {
   const [
     totalUsers,
     roleCounts,
+    userActivity,
     credits,
     payments,
     lowStockItems,
     supplierOrders,
     riskChecks,
+    sessions,
     recentCredits,
     recentPayments,
     recentOrders,
@@ -191,6 +193,15 @@ export async function GET(request: NextRequest) {
     prisma.userProfile.groupBy({
       by: ["role"],
       _count: { _all: true },
+    }),
+    prisma.user.findMany({
+      select: {
+        id: true,
+        createdAt: true,
+        sessions: {
+          select: { updatedAt: true },
+        },
+      },
     }),
     prisma.credit.findMany({
       select: {
@@ -239,6 +250,10 @@ export async function GET(request: NextRequest) {
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.session.findMany({
+      where: { updatedAt: { gte: today } },
+      select: { id: true },
     }),
     prisma.credit.findMany({
       select: {
@@ -327,6 +342,26 @@ export async function GET(request: NextRequest) {
     (check) => check.createdAt >= previousStart && check.createdAt < currentStart
   );
 
+  const monthStart = new Date(today);
+  monthStart.setDate(today.getDate() - 30);
+  const newUsersToday = await prisma.user.count({ where: { createdAt: { gte: today } } });
+  const newUsersThisMonth = await prisma.user.count({ where: { createdAt: { gte: monthStart } } });
+
+  const activeSessionsToday = sessions.length;
+
+  const userGrowthTrend = buckets.map((bucket) => ({
+    date: bucket.key,
+    label: bucket.label,
+    newUsers: userActivity.filter(
+      (user) => user.createdAt >= bucket.start && user.createdAt < bucket.end
+    ).length,
+    activeUsers: userActivity.filter((user) =>
+      user.sessions.some(
+        (session) => session.updatedAt >= bucket.start && session.updatedAt < bucket.end
+      )
+    ).length,
+  }));
+
   const creditTrendMap = new Map(
     buckets.map((bucket) => [
       bucket.key,
@@ -369,9 +404,9 @@ export async function GET(request: NextRequest) {
     const averageScore =
       scored.length > 0
         ? Math.round(
-            scored.reduce((sum, check) => sum + Number(check.score || 0), 0) /
-              scored.length
-          )
+          scored.reduce((sum, check) => sum + Number(check.score || 0), 0) /
+          scored.length
+        )
         : null;
     const levelCounts = checks.reduce(
       (acc, check) => {
@@ -410,20 +445,20 @@ export async function GET(request: NextRequest) {
   const averageCurrentRiskScore =
     scoredCurrentRiskChecks.length > 0
       ? Math.round(
-          scoredCurrentRiskChecks.reduce(
-            (sum, check) => sum + Number(check.score || 0),
-            0
-          ) / scoredCurrentRiskChecks.length
-        )
+        scoredCurrentRiskChecks.reduce(
+          (sum, check) => sum + Number(check.score || 0),
+          0
+        ) / scoredCurrentRiskChecks.length
+      )
       : null;
   const averagePreviousRiskScore =
     scoredPreviousRiskChecks.length > 0
       ? Math.round(
-          scoredPreviousRiskChecks.reduce(
-            (sum, check) => sum + Number(check.score || 0),
-            0
-          ) / scoredPreviousRiskChecks.length
-        )
+        scoredPreviousRiskChecks.reduce(
+          (sum, check) => sum + Number(check.score || 0),
+          0
+        ) / scoredPreviousRiskChecks.length
+      )
       : null;
   const riskLevelCounts = currentRiskChecks.reduce(
     (acc, check) => {
@@ -538,6 +573,9 @@ export async function GET(request: NextRequest) {
       riskChecks30d: currentRiskChecks.length,
       periodRiskChecks: currentRiskChecks.length,
       periodAverageRiskScore: averageCurrentRiskScore,
+      activeSessionsToday,
+      newUsersToday,
+      newUsersThisMonth,
       riskLevelCounts,
     },
     comparisons: {
@@ -555,6 +593,7 @@ export async function GET(request: NextRequest) {
           : null,
     },
     trends: {
+      userGrowth: userGrowthTrend,
       creditsIssued: Array.from(creditTrendMap.values()),
       paymentsCollected: Array.from(paymentTrendMap.values()),
       riskScore: riskTrend,

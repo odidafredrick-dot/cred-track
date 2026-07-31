@@ -9,6 +9,20 @@ export const roleLabels: Record<UserRole, string> = {
   ADMIN: "Admin",
 };
 
+export const userStatuses = ["ACTIVE", "SUSPENDED", "PENDING"] as const;
+
+export type UserStatus = (typeof userStatuses)[number];
+
+export const statusLabels: Record<UserStatus, string> = {
+  ACTIVE: "Active",
+  SUSPENDED: "Suspended",
+  PENDING: "Pending",
+};
+
+export function isUserStatus(value: string | null): value is UserStatus {
+  return userStatuses.includes(value as UserStatus);
+}
+
 export const paymentModes = ["POCHI", "PAY_BILL", "CASH", "TILL"] as const;
 
 export type PaymentMode = (typeof paymentModes)[number];

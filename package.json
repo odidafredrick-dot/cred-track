@@ -18,7 +18,8 @@
     "next": "^16.1.2",
     "pg": "^8.16.3",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.28",

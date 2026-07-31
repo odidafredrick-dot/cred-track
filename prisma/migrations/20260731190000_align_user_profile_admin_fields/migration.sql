@@ -1,0 +1,15 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserStatus') THEN
+    CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'SUSPENDED', 'PENDING');
+  END IF;
+END
+$$;
+
+ALTER TABLE "UserProfile"
+ADD COLUMN IF NOT EXISTS "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
+ADD COLUMN IF NOT EXISTS "businessType" TEXT,
+ADD COLUMN IF NOT EXISTS "currentPlan" TEXT,
+ADD COLUMN IF NOT EXISTS "phoneVerified" BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS "UserProfile_status_idx" ON "UserProfile"("status");
