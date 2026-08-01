@@ -11,7 +11,7 @@ import {
   type UserStatus,
 } from "@/lib/user-profile";
 import Image from "next/image";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 type AdminTab =
@@ -225,6 +225,70 @@ type OperationsData = {
   }>;
 };
 
+type OperationAnnouncement = OperationsData["announcements"][number];
+
+type FinanceData = {
+  summary: {
+    totalCreditsIssued: number;
+    totalPaid: number;
+    totalTopups: number;
+    paidTopups: number;
+    successfulTopupValue: number;
+    openOrders: number;
+  };
+  credits: Array<{
+    id: string;
+    customerName: string;
+    totalAmount: number | string;
+    amountPaid: number | string;
+    status: string;
+    createdAt: string;
+  }>;
+  payments: Array<{
+    id: string;
+    amount: number | string;
+    createdAt: string;
+    credit: { customerName: string };
+  }>;
+  topups: Array<{
+    id: string;
+    phone: string;
+    amount: number | string;
+    status: string;
+    createdAt: string;
+  }>;
+  orders: Array<{
+    id: string;
+    buyerName: string;
+    totalAmount: number | string;
+    status: string;
+    createdAt: string;
+  }>;
+};
+
+type SmsData = {
+  orders: Array<{
+    id: string;
+    buyerName: string;
+    buyerPhone: string | null;
+    status: string;
+    smsStatus: string | null;
+    smsMessageId: string | null;
+    createdAt: string;
+  }>;
+  restocks: Array<{
+    id: string;
+    businessUserId: string;
+    supplierUserId: string;
+    product: string;
+    quantity: number | null;
+    status: string;
+    smsStatus: string | null;
+    smsMessageId: string | null;
+    createdAt: string;
+  }>;
+};
+
 type AdminModule = {
   id: AdminTab;
   label: string;
@@ -232,19 +296,24 @@ type AdminModule = {
   implemented?: boolean;
 };
 
+type GlobalEntitySearchItem = {
+  id: string;
+  label: string;
+  type: "account" | "business";
+};
+
 const adminModules: AdminModule[] = [
   { id: "dashboard", label: "Dashboard", icon: "M3 13h8V3H3v10Zm10 8h8V3h-8v18ZM3 21h8v-6H3v6Z", implemented: true },
   { id: "users", label: "User Management", icon: "M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3ZM8 11c1.4 0 2.5-1.1 2.5-2.5S9.4 6 8 6 5.5 7.1 5.5 8.5 6.6 11 8 11Zm8 2c-2.7 0-5 1.4-5 3.2V18h10v-1.8c0-1.8-2.3-3.2-5-3.2ZM8 13c-2.2 0-4 1.1-4 2.5V18h5v-1.8c0-1 .5-1.9 1.3-2.6-.7-.4-1.5-.6-2.3-.6Z", implemented: true },
   { id: "businesses", label: "Business Management", icon: "M4 21V7l8-4 8 4v14h-6v-6h-4v6H4Zm3-3h2v-2H7v2Zm0-4h2v-2H7v2Zm4 0h2v-2h-2v2Zm4 0h2v-2h-2v2Zm0-4h2V8h-2v2Zm-4 0h2V8h-2v2Z", implemented: true },
   { id: "subscriptions", label: "Subscription Management", icon: "M4 6h16v12H4V6Zm2 3v2h8V9H6Zm0 4v2h5v-2H6Zm11 1.5 2-2-1.4-1.4-.6.6V9h-2v2.7l-.6-.6L13 12.5l2 2h2Z" },
-  { id: "sms", label: "SMS Management", icon: "M4 5h16v11H7l-3 3V5Zm4 4h8V7H8v2Zm0 4h6v-2H8v2Z" },
+  { id: "sms", label: "SMS Management", icon: "M4 5h16v11H7l-3 3V5Zm4 4h8V7H8v2Zm0 4h6v-2H8v2Z", implemented: true },
   { id: "credit", label: "Credit Analytics", icon: "M4 19h16v2H4v-2Zm1-8h3v6H5v-6Zm5-5h3v11h-3V6Zm5 3h3v8h-3V9Z" },
   { id: "inventory", label: "Inventory Analytics", icon: "M4 7 12 3l8 4-8 4-8-4Zm0 3 8 4 8-4v7l-8 4-8-4v-7Z" },
   { id: "reports", label: "Reports", icon: "M6 3h9l3 3v15H6V3Zm8 1.5V7h2.5L14 4.5ZM8 11h8V9H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z" },
-  { id: "notifications", label: "Notifications", icon: "M12 22a2.5 2.5 0 0 0 2.4-2h-4.8A2.5 2.5 0 0 0 12 22Zm7-5-2-2v-5a5 5 0 0 0-10 0v5l-2 2v1h14v-1Z" },
   { id: "support", label: "Customer Support", icon: "M12 3a7 7 0 0 0-7 7v4a3 3 0 0 0 3 3h1v-6H7v-1a5 5 0 0 1 10 0v1h-2v6h1a3 3 0 0 0 3-3v-4a7 7 0 0 0-7-7Zm-2 15h4v2h-4v-2Z" },
   { id: "agents", label: "Agent Management", icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-8 8c.5-3.4 3.8-6 8-6s7.5 2.6 8 6H4Z" },
-  { id: "finance", label: "Finance", icon: "M4 7h16v10H4V7Zm2 2v6h12V9H6Zm6 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" },
+  { id: "finance", label: "Finance", icon: "M4 7h16v10H4V7Zm2 2v6h12V9H6Zm6 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z", implemented: true },
   { id: "marketing", label: "Marketing", icon: "M4 10v4h3l7 4V6l-7 4H4Zm12-2.5v9l2-1.2V8.7l-2-1.2Z" },
   { id: "feedback", label: "Feedback", icon: "M4 5h16v10H7l-3 4V5Zm4 4h8V7H8v2Zm0 3h6v-2H8v2Z" },
   { id: "analytics", label: "Analytics Dashboard", icon: "M4 19h16v2H4v-2Zm2-8 4 3 4-7 4 5 2-2v4l-2 2-4-5-4 7-5-4 1-3Z", implemented: true },
@@ -609,15 +678,14 @@ function OverviewCard({
               <div key={`${item.label}-${item.value}`}>
                 <p className="text-[11px] text-slate-400">{item.label}</p>
                 <p
-                  className={`mt-1 text-lg font-semibold ${
-                    item.tone === "green"
-                      ? "text-emerald-400"
-                      : item.tone === "red"
-                        ? "text-rose-400"
-                        : item.tone === "amber"
-                          ? "text-amber-300"
-                          : "text-white"
-                  }`}
+                  className={`mt-1 text-lg font-semibold ${item.tone === "green"
+                    ? "text-emerald-400"
+                    : item.tone === "red"
+                      ? "text-rose-400"
+                      : item.tone === "amber"
+                        ? "text-amber-300"
+                        : "text-white"
+                    }`}
                 >
                   {item.value}
                 </p>
@@ -1088,8 +1156,13 @@ export default function AdminPage() {
   const [priceRules, setPriceRules] = useState<PriceRule[]>([]);
   const [violations, setViolations] = useState<PriceViolation[]>([]);
   const [operations, setOperations] = useState<OperationsData | null>(null);
+  const [finance, setFinance] = useState<FinanceData | null>(null);
+  const [sms, setSms] = useState<SmsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [selectedEntity, setSelectedEntity] = useState<GlobalEntitySearchItem | null>(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -1098,6 +1171,9 @@ export default function AdminPage() {
   const [businessStatusFilter, setBusinessStatusFilter] = useState("");
   const [businessPlanFilter, setBusinessPlanFilter] = useState("");
   const [priceForm, setPriceForm] = useState(emptyPriceForm);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [announcementForm, setAnnouncementForm] = useState({
     title: "",
     body: "",
@@ -1115,13 +1191,16 @@ export default function AdminPage() {
     setError("");
 
     try {
-      const [overviewResponse, usersResponse, businessesResponse, priceResponse, operationsResponse] =
+      const entityQuery = selectedEntity?.id ? `&entityId=${encodeURIComponent(selectedEntity.id)}` : "";
+      const [overviewResponse, usersResponse, businessesResponse, priceResponse, operationsResponse, financeResponse, smsResponse] =
         await Promise.all([
-          fetch(`/api/admin/overview?period=${analyticsPeriod}&groupBy=${analyticsGroupBy}`),
+          fetch(`/api/admin/overview?period=${analyticsPeriod}&groupBy=${analyticsGroupBy}${entityQuery}`),
           fetch("/api/admin/users"),
           fetch("/api/admin/businesses"),
           fetch("/api/admin/price-rules"),
           fetch("/api/admin/operations"),
+          fetch(`/api/admin/finance${entityQuery ? `?entityId=${encodeURIComponent(selectedEntity!.id)}` : ""}`),
+          fetch(`/api/admin/sms${entityQuery ? `?entityId=${encodeURIComponent(selectedEntity!.id)}` : ""}`),
         ]);
 
       if (
@@ -1129,7 +1208,9 @@ export default function AdminPage() {
         usersResponse.status === 403 ||
         businessesResponse.status === 403 ||
         priceResponse.status === 403 ||
-        operationsResponse.status === 403
+        operationsResponse.status === 403 ||
+        financeResponse.status === 403 ||
+        smsResponse.status === 403
       ) {
         router.replace("/dashboard");
         return;
@@ -1148,12 +1229,18 @@ export default function AdminPage() {
         : { items: [] };
       const priceData = priceResponse.ok
         ? ((await priceResponse.json()) as {
-            rules: PriceRule[];
-            violations: PriceViolation[];
-          })
+          rules: PriceRule[];
+          violations: PriceViolation[];
+        })
         : { rules: [], violations: [] };
       const operationsData = operationsResponse.ok
         ? ((await operationsResponse.json()) as OperationsData)
+        : null;
+      const financeData = financeResponse.ok
+        ? ((await financeResponse.json()) as FinanceData)
+        : null;
+      const smsData = smsResponse.ok
+        ? ((await smsResponse.json()) as SmsData)
         : null;
 
       setOverview(overviewData);
@@ -1162,6 +1249,8 @@ export default function AdminPage() {
       setPriceRules(priceData.rules || []);
       setViolations(priceData.violations || []);
       setOperations(operationsData);
+      setFinance(financeData);
+      setSms(smsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Admin dashboard failed.");
     } finally {
@@ -1182,27 +1271,130 @@ export default function AdminPage() {
     if (session?.user?.id) {
       void loadAdmin();
     }
-  }, [analyticsGroupBy, analyticsPeriod, isPending, session?.user?.id]);
+  }, [analyticsGroupBy, analyticsPeriod, isPending, selectedEntity?.id, session?.user?.id]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const exportDashboard = () => {
+    setIsExporting(true);
+
+    try {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        overview,
+        users,
+        businesses,
+        priceRules,
+        violations,
+        operations,
+        finance,
+        sms,
+        filters: {
+          selectedEntity,
+          globalSearchQuery,
+          userSearch,
+          roleFilter,
+          statusFilter,
+          businessSearch,
+          businessRoleFilter,
+          businessStatusFilter,
+          businessPlanFilter,
+        },
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `holwa-admin-export-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setIsProfileMenuOpen(false);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const globalSearchResults = useMemo(() => {
+    const term = globalSearchQuery.trim().toLowerCase();
+    if (!term) {
+      return [];
+    }
+
+    const seen = new Set<string>();
+    const results: GlobalEntitySearchItem[] = [];
+
+    const pushResult = (item: GlobalEntitySearchItem) => {
+      const key = `${item.type}:${item.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(item);
+      }
+    };
+
+    users.forEach((user) => {
+      const label = [user.businessName, user.name, user.email, user.phoneNumber]
+        .filter(Boolean)
+        .join(" ");
+      if (label.toLowerCase().includes(term)) {
+        pushResult({
+          id: user.id,
+          label: user.businessName || user.name || user.email,
+          type: "account",
+        });
+      }
+    });
+
+    businesses.forEach((business) => {
+      const label = [business.businessName, business.name, business.email, business.phoneNumber]
+        .filter(Boolean)
+        .join(" ");
+      if (label.toLowerCase().includes(term)) {
+        pushResult({
+          id: business.id,
+          label: business.businessName || business.name || business.email,
+          type: "business",
+        });
+      }
+    });
+
+    return results.slice(0, 8);
+  }, [businesses, globalSearchQuery, users]);
 
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase();
     return users.filter((user) => {
+      const selectedMatches = selectedEntity ? user.id === selectedEntity.id : true;
       const roleMatches = roleFilter ? user.role === roleFilter : true;
       const statusMatches = statusFilter ? user.status === statusFilter : true;
       const searchMatches = term
         ? [user.email, user.name, user.businessName, user.phoneNumber, user.location]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-            .includes(term)
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term)
         : true;
-      return roleMatches && statusMatches && searchMatches;
+      return selectedMatches && roleMatches && statusMatches && searchMatches;
     });
-  }, [roleFilter, statusFilter, userSearch, users]);
+  }, [roleFilter, selectedEntity, statusFilter, userSearch, users]);
 
   const filteredBusinesses = useMemo(() => {
     const term = businessSearch.trim().toLowerCase();
     return businesses.filter((business) => {
+      const selectedMatches = selectedEntity ? business.id === selectedEntity.id : true;
       const roleMatches = businessRoleFilter ? business.role === businessRoleFilter : true;
       const statusMatches = businessStatusFilter ? business.status === businessStatusFilter : true;
       const planMatches = businessPlanFilter
@@ -1210,23 +1402,23 @@ export default function AdminPage() {
         : true;
       const searchMatches = term
         ? [
-            business.email,
-            business.name,
-            business.businessName,
-            business.businessType,
-            business.phoneNumber,
-            business.location,
-            business.currentPlan,
-            business.role,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-            .includes(term)
+          business.email,
+          business.name,
+          business.businessName,
+          business.businessType,
+          business.phoneNumber,
+          business.location,
+          business.currentPlan,
+          business.role,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term)
         : true;
-      return roleMatches && statusMatches && planMatches && searchMatches;
+      return selectedMatches && roleMatches && statusMatches && planMatches && searchMatches;
     });
-  }, [businessRoleFilter, businessSearch, businessStatusFilter, businessPlanFilter, businesses]);
+  }, [businessPlanFilter, businessRoleFilter, businessSearch, businessStatusFilter, businesses, selectedEntity]);
 
   const updateUser = async (
     userId: string,
@@ -1326,6 +1518,28 @@ export default function AdminPage() {
     await loadAdmin();
   };
 
+  const updateAnnouncement = async (
+    id: string,
+    updates: { title?: string; body?: string; audience?: UserRole | "" }
+  ) => {
+    const response = await fetch("/api/admin/operations", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "announcement", id, ...updates }),
+    });
+
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      setError(data.error || "Could not update announcement.");
+      return false;
+    }
+
+    await loadAdmin();
+    return true;
+  };
+
   const createFeatureFlag = async (event: FormEvent) => {
     event.preventDefault();
     const response = await fetch("/api/admin/operations", {
@@ -1392,16 +1606,14 @@ export default function AdminPage() {
                   key={module.id}
                   type="button"
                   onClick={() => setActiveTab(module.id)}
-                  className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
-                    isActive
-                      ? "bg-emerald-500/16 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(34,197,94,0.18)]"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
-                  }`}
+                  className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${isActive
+                    ? "bg-emerald-500/16 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(34,197,94,0.18)]"
+                    : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    }`}
                 >
                   <span
-                    className={`flex h-6 w-6 items-center justify-center ${
-                      isActive ? "text-emerald-300" : "text-slate-400 group-hover:text-slate-200"
-                    }`}
+                    className={`flex h-6 w-6 items-center justify-center ${isActive ? "text-emerald-300" : "text-slate-400 group-hover:text-slate-200"
+                      }`}
                   >
                     <AdminSvgIcon path={module.icon} />
                   </span>
@@ -1440,43 +1652,119 @@ export default function AdminPage() {
                   <span className="text-lg">≡</span>
                 </button>
                 <div className="hidden h-9 w-px bg-white/10 lg:block" />
-                <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-400 md:flex">
+                <div className="relative hidden items-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-400 md:flex">
                   <AdminSvgIcon path="M10 4a6 6 0 0 1 4.7 9.7l4.3 4.3-1.4 1.4-4.3-4.3A6 6 0 1 1 10 4Zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
                   <input
                     type="search"
-                    placeholder="Search anything..."
+                    placeholder="Search business/account..."
+                    value={globalSearchQuery}
+                    onChange={(event) => setGlobalSearchQuery(event.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => window.setTimeout(() => setIsSearchFocused(false), 120)}
                     className="w-72 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 outline-none"
                   />
-                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
-                    Ctrl + K
-                  </span>
+                  {selectedEntity ? (
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setSelectedEntity(null);
+                        setGlobalSearchQuery("");
+                        setIsSearchFocused(false);
+                      }}
+                      className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400 transition hover:text-slate-200"
+                    >
+                      Clear
+                    </button>
+                  ) : (
+                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+                      Ctrl + K
+                    </span>
+                  )}
+                  {isSearchFocused && globalSearchResults.length > 0 ? (
+                    <div className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-lg border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40">
+                      {globalSearchResults.map((item) => (
+                        <button
+                          key={`${item.type}-${item.id}`}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setSelectedEntity(item);
+                            setGlobalSearchQuery(item.label);
+                            setIsSearchFocused(false);
+                          }}
+                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-white/5"
+                        >
+                          <span>
+                            <span className="block font-medium text-white">{item.label}</span>
+                            <span className="text-xs text-slate-500">{item.type === "business" ? "Business" : "Account"}</span>
+                          </span>
+                          <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                            View scope
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-slate-900/80 text-slate-300"
-                  aria-label="Notifications"
+                  className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-slate-900/80 text-slate-300 transition hover:border-emerald-400/40 hover:text-emerald-300"
+                  aria-label="Open operations"
+                  onClick={() => setActiveTab("operations")}
                 >
-                  <AdminSvgIcon path={adminModules.find((module) => module.id === "notifications")?.icon || adminModules[0].icon} />
+                  <AdminSvgIcon path="M12 22a2.5 2.5 0 0 0 2.4-2h-4.8A2.5 2.5 0 0 0 12 22Zm7-5-2-2v-5a5 5 0 0 0-10 0v5l-2 2v1h14v-1Z" />
                   <span className="absolute -right-1 -top-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
                     {formatNumber(operations?.announcements.filter((item) => item.active).length || 0)}
                   </span>
                 </button>
-                <div className="hidden items-center gap-3 sm:flex">
-                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-bold text-white">
-                    {session.user.image ? (
-                      <img src={session.user.image} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      "A"
-                    )}
+                <div className="relative hidden sm:block" ref={profileMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileMenuOpen((current) => !current)}
+                    className="flex items-center gap-3 rounded-lg border border-white/10 bg-slate-900/80 px-2 py-2 text-left transition hover:border-emerald-400/40"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-bold text-white">
+                      {session.user.image ? (
+                        <img src={session.user.image} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        "A"
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white">{session.user.name || "Admin"}</p>
+                      <p className="text-xs text-slate-400">Super Admin</p>
+                    </div>
+                    <span className="text-slate-500">⌄</span>
+                  </button>
+
+                  <div className={`absolute right-0 z-20 mt-2 w-56 origin-top-right rounded-xl border border-white/10 bg-slate-950/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.35)] transition-all duration-200 ${isProfileMenuOpen ? "pointer-events-auto scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"}`}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+                      onClick={() => {
+                        exportDashboard();
+                      }}
+                      disabled={isExporting}
+                    >
+                      <span>{isExporting ? "Preparing export..." : "Export Dashboard"}</span>
+                      <span className="text-xs text-slate-400">↗</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        void signOut();
+                      }}
+                    >
+                      <span>Sign out</span>
+                      <span className="text-xs text-slate-400">→</span>
+                    </button>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{session.user.name || "Admin"}</p>
-                    <p className="text-xs text-slate-400">Super Admin</p>
-                  </div>
-                  <span className="text-slate-500">⌄</span>
                 </div>
               </div>
             </div>
@@ -1487,11 +1775,10 @@ export default function AdminPage() {
                   key={module.id}
                   type="button"
                   onClick={() => setActiveTab(module.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
-                    activeTab === module.id
-                      ? "bg-emerald-500/16 text-emerald-300"
-                      : "bg-slate-900 text-slate-300"
-                  }`}
+                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === module.id
+                    ? "bg-emerald-500/16 text-emerald-300"
+                    : "bg-slate-900 text-slate-300"
+                    }`}
                 >
                   <AdminSvgIcon path={module.icon} className="h-3.5 w-3.5" />
                   {module.label}
@@ -1505,7 +1792,7 @@ export default function AdminPage() {
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">{activeModule.label}</h1>
                 <p className="mt-1 text-sm text-slate-400">
-                  Welcome back, Admin. Here&apos;s what&apos;s happening on Holwa.
+                  {selectedEntity ? `Focused view for ${selectedEntity.label}.` : "Welcome back, Admin. Here&apos;s what&apos;s happening on Holwa."}
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1536,12 +1823,6 @@ export default function AdminPage() {
                 <div className="rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-slate-200">
                   {overview ? formatDateRange(overview.period.currentStart, overview.generatedAt) : "Loading"}
                 </div>
-                <ActionButton type="button" tone="green">
-                  Export Dashboard
-                </ActionButton>
-                <ActionButton type="button" tone="ghost" onClick={() => void signOut()}>
-                  Sign out
-                </ActionButton>
               </div>
             </section>
 
@@ -1556,6 +1837,7 @@ export default function AdminPage() {
                 overview={overview}
                 users={users}
                 businesses={businesses}
+                operations={operations}
                 setActiveTab={setActiveTab}
               />
             ) : null}
@@ -1613,8 +1895,13 @@ export default function AdminPage() {
                 setFlagForm={setFlagForm}
                 createFeatureFlag={createFeatureFlag}
                 toggleAnnouncement={toggleAnnouncement}
+                updateAnnouncement={updateAnnouncement}
                 toggleFeatureFlag={toggleFeatureFlag}
               />
+            ) : null}
+
+            {activeTab === "finance" ? (
+              <FinanceTab finance={finance} />
             ) : null}
 
             {!["dashboard", "analytics", "users", "businesses", "pricing", "operations"].includes(activeTab) ? (
@@ -1627,15 +1914,255 @@ export default function AdminPage() {
   );
 }
 
+function KpiCard({
+  label,
+  value,
+  detail,
+  tone = "blue",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "blue" | "emerald" | "amber" | "red";
+}) {
+  const tones = {
+    blue: "border-blue-400/20 bg-blue-500/10 text-blue-200",
+    emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+    amber: "border-amber-400/20 bg-amber-500/10 text-amber-200",
+    red: "border-rose-400/20 bg-rose-500/10 text-rose-200",
+  };
+
+  return (
+    <div className={`rounded-xl border p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)] ${tones[tone]}`}>
+      <p className="text-sm text-slate-300">{label}</p>
+      <p className="mt-3 text-2xl font-semibold text-white">{value}</p>
+      <p className="mt-2 text-sm text-slate-400">{detail}</p>
+    </div>
+  );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return <h3 className="text-sm font-semibold text-slate-100">{title}</h3>;
+}
+
+function StatusPill({ children, tone = "blue" }: { children: ReactNode; tone?: "blue" | "emerald" | "amber" | "red" }) {
+  const tones = {
+    blue: "border-blue-400/20 bg-blue-500/10 text-blue-700",
+    emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-700",
+    amber: "border-amber-400/20 bg-amber-500/10 text-amber-700",
+    red: "border-rose-400/20 bg-rose-500/10 text-rose-700",
+  };
+
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+}
+
+function FinanceTab({ finance }: { finance: FinanceData | null }) {
+  if (!finance) {
+    return (
+      <section className="rounded-xl border border-gray-100 bg-white p-8 text-sm text-gray-500 shadow-sm">
+        No finance data available yet.
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Credits issued" value={formatMoney(finance.summary.totalCreditsIssued)} detail="Total value of issued credits" tone="blue" />
+        <KpiCard label="Payments received" value={formatMoney(finance.summary.totalPaid)} detail="Collected across all credits" tone="emerald" />
+        <KpiCard label="M-Pesa purchases" value={formatMoney(finance.summary.successfulTopupValue)} detail={`${finance.summary.paidTopups} successful reminder purchases`} tone="amber" />
+        <KpiCard label="Open orders" value={formatNumber(finance.summary.openOrders)} detail="Supplier orders still pending" tone="red" />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <DarkPanel title="Recent credits" className="flex h-[50vh] min-h-[280px] flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1">
+            {finance.credits.length ? (
+              <div className="space-y-2">
+                {finance.credits.map((credit) => (
+                  <div key={credit.id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-white">{credit.customerName}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{formatDate(credit.createdAt)}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[11px] font-semibold text-white">{formatMoney(credit.totalAmount)}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{credit.status}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyDark text="No credits yet." />
+            )}
+          </div>
+        </DarkPanel>
+
+        <DarkPanel title="Recent payments" className="flex h-[50vh] min-h-[280px] flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1">
+            {finance.payments.length ? (
+              <div className="space-y-2">
+                {finance.payments.map((payment) => (
+                  <div key={payment.id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-white">{payment.credit.customerName}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{formatDate(payment.createdAt)}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[11px] font-semibold text-white">{formatMoney(payment.amount)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyDark text="No payments yet." />
+            )}
+          </div>
+        </DarkPanel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <DarkPanel title="M-Pesa reminder purchases" className="flex h-[50vh] min-h-[280px] flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1">
+            {finance.topups.length ? (
+              <div className="space-y-2">
+                {finance.topups.map((topup) => (
+                  <div key={topup.id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-white">{topup.phone}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{topup.status}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[11px] font-semibold text-white">{formatMoney(topup.amount)}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{formatDate(topup.createdAt)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyDark text="No reminder purchases yet." />
+            )}
+          </div>
+        </DarkPanel>
+
+        <DarkPanel title="Supplier orders" className="flex h-[50vh] min-h-[280px] flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1">
+            {finance.orders.length ? (
+              <div className="space-y-2">
+                {finance.orders.map((order) => (
+                  <div key={order.id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-white">{order.buyerName}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{formatDate(order.createdAt)}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[11px] font-semibold text-white">{formatMoney(order.totalAmount)}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{order.status}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyDark text="No supplier orders yet." />
+            )}
+          </div>
+        </DarkPanel>
+      </section>
+    </div>
+  );
+}
+
+function SmsTab({ sms }: { sms: SmsData | null }) {
+  if (!sms) {
+    return (
+      <section className="rounded-xl border border-gray-100 bg-white p-8 text-sm text-gray-500 shadow-sm">
+        No SMS activity available yet.
+      </section>
+    );
+  }
+
+  const sentOrders = sms.orders.filter((order) => order.smsStatus === "SENT").length;
+  const pendingOrders = sms.orders.filter((order) => order.smsStatus !== "SENT").length;
+  const sentRestocks = sms.restocks.filter((item) => item.smsStatus === "SENT").length;
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 md:grid-cols-3">
+        <KpiCard label="Supplier SMS" value={formatNumber(sentOrders)} detail="Orders sent successfully" tone="emerald" />
+        <KpiCard label="Pending SMS" value={formatNumber(pendingOrders)} detail="Needs follow-up" tone="amber" />
+        <KpiCard label="Restock alerts" value={formatNumber(sentRestocks)} detail="Restock SMS sent" tone="blue" />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-4 py-3">
+            <SectionTitle title="Supplier order SMS log" />
+          </div>
+          <div className="divide-y divide-gray-100">
+            {sms.orders.map((order) => (
+              <div key={order.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-950">{order.buyerName}</p>
+                    <p className="text-sm text-gray-500">{order.buyerPhone || "No phone"}</p>
+                  </div>
+                  <StatusPill tone={order.smsStatus === "SENT" ? "emerald" : "amber"}>
+                    {order.smsStatus || "PENDING"}
+                  </StatusPill>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">{order.status}</p>
+                {order.smsMessageId ? <p className="mt-1 text-xs text-gray-400">Ref: {order.smsMessageId}</p> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-4 py-3">
+            <SectionTitle title="Restock request SMS log" />
+          </div>
+          <div className="divide-y divide-gray-100">
+            {sms.restocks.map((item) => (
+              <div key={item.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-950">{item.product}</p>
+                    <p className="text-sm text-gray-500">Qty: {item.quantity ?? "-"}</p>
+                  </div>
+                  <StatusPill tone={item.smsStatus === "SENT" ? "emerald" : "amber"}>
+                    {item.smsStatus || "PENDING"}
+                  </StatusPill>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">{item.status}</p>
+                {item.smsMessageId ? <p className="mt-1 text-xs text-gray-400">Ref: {item.smsMessageId}</p> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function DashboardTab({
   overview,
   users,
   businesses,
+  operations,
   setActiveTab,
 }: {
   overview: OverviewData;
   users: AdminUser[];
   businesses: AdminBusiness[];
+  operations: OperationsData | null;
   setActiveTab: (tab: AdminTab) => void;
 }) {
   const riskSegments = [
@@ -1651,7 +2178,7 @@ function DashboardTab({
     activeUsers: overview.trends.paymentsCollected.find((item) => item.date === row.date)?.count || 0,
   }));
   const quickAccess = adminModules.filter((module) =>
-    ["users", "businesses", "subscriptions", "sms", "credit", "inventory", "reports", "finance", "notifications", "support", "agents", "feedback", "backup"].includes(module.id)
+    ["users", "businesses", "subscriptions", "sms", "credit", "inventory", "reports", "finance", "support", "agents", "feedback", "backup"].includes(module.id)
   );
 
   return (
@@ -1839,14 +2366,14 @@ function DashboardTab({
           onClick={() => setActiveTab("backup")}
         />
         <StatusWidget
-          title="Notifications"
+          title="Operations"
           lines={[
-            ["Recent Activity", formatNumber(overview.recentActivity.length)],
-            ["Announcements", "Operations"],
+            ["Active Announcements", formatNumber(operations?.announcements.filter((item) => item.active).length || 0)],
+            ["Feature Flags", formatNumber(operations?.featureFlags.length || 0)],
             ["Risk Checks", formatNumber(overview.kpis.periodRiskChecks)],
           ]}
-          action="View All Notifications ->"
-          onClick={() => setActiveTab("notifications")}
+          action="Open Operations ->"
+          onClick={() => setActiveTab("operations")}
         />
         <DarkPanel title="Support Tickets">
           <DonutChart
@@ -2471,6 +2998,7 @@ function OperationsTab({
   setFlagForm,
   createFeatureFlag,
   toggleAnnouncement,
+  updateAnnouncement,
   toggleFeatureFlag,
 }: {
   operations: OperationsData | null;
@@ -2481,8 +3009,45 @@ function OperationsTab({
   setFlagForm: (value: { key: string; name: string; description: string; enabled: boolean }) => void;
   createFeatureFlag: (event: FormEvent) => Promise<void>;
   toggleAnnouncement: (id: string, active: boolean) => Promise<void>;
+  updateAnnouncement: (
+    id: string,
+    updates: { title?: string; body?: string; audience?: UserRole | "" }
+  ) => Promise<boolean>;
   toggleFeatureFlag: (id: string, enabled: boolean) => Promise<void>;
 }) {
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<string | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<{
+    title: string;
+    body: string;
+    audience: UserRole | "";
+  }>({ title: "", body: "", audience: "" });
+
+  const startEditingAnnouncement = (announcement: OperationAnnouncement) => {
+    setEditingAnnouncementId(announcement.id);
+    setEditingAnnouncement({
+      title: announcement.title,
+      body: announcement.body,
+      audience: announcement.audience || "",
+    });
+  };
+
+  const cancelEditingAnnouncement = () => {
+    setEditingAnnouncementId(null);
+    setEditingAnnouncement({ title: "", body: "", audience: "" });
+  };
+
+  const saveAnnouncementEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingAnnouncementId) {
+      return;
+    }
+
+    const saved = await updateAnnouncement(editingAnnouncementId, editingAnnouncement);
+    if (saved) {
+      cancelEditingAnnouncement();
+    }
+  };
+
   return (
     <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
       <div className="space-y-4">
@@ -2525,20 +3090,48 @@ function OperationsTab({
           {operations?.announcements.length ? (
             <div className="divide-y divide-white/10">
               {operations.announcements.map((announcement) => (
-                <div key={announcement.id} className="grid gap-3 py-3 lg:grid-cols-[1fr_auto]">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-white">{announcement.title}</p>
-                      <DarkPill tone={announcement.active ? "green" : "slate"}>
-                        {announcement.active ? "Active" : "Paused"}
-                      </DarkPill>
-                      <DarkPill tone="blue">{announcement.audience ? roleLabels[announcement.audience] : "All users"}</DarkPill>
+                <div key={announcement.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  {editingAnnouncementId === announcement.id ? (
+                    <form onSubmit={saveAnnouncementEdit} className="space-y-3">
+                      <DarkInput value={editingAnnouncement.title} onChange={(event) => setEditingAnnouncement({ ...editingAnnouncement, title: event.target.value })} placeholder="Title" required />
+                      <DarkTextarea value={editingAnnouncement.body} onChange={(event) => setEditingAnnouncement({ ...editingAnnouncement, body: event.target.value })} placeholder="Message" className="min-h-24" required />
+                      <DarkSelect value={editingAnnouncement.audience} onChange={(event) => setEditingAnnouncement({ ...editingAnnouncement, audience: event.target.value as UserRole | "" })}>
+                        <option value="">All users</option>
+                        {userRoles
+                          .filter((role) => role !== "ADMIN")
+                          .map((role) => (
+                            <option key={role} value={role}>
+                              {roleLabels[role]}
+                            </option>
+                          ))}
+                      </DarkSelect>
+                      <div className="flex flex-wrap gap-2">
+                        <ActionButton type="submit" tone="green">Save</ActionButton>
+                        <ActionButton type="button" tone="ghost" onClick={cancelEditingAnnouncement}>Cancel</ActionButton>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-white">{announcement.title}</p>
+                          <DarkPill tone={announcement.active ? "green" : "slate"}>
+                            {announcement.active ? "Active" : "Paused"}
+                          </DarkPill>
+                          <DarkPill tone="blue">{announcement.audience ? roleLabels[announcement.audience] : "All users"}</DarkPill>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-400">{announcement.body}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <ActionButton type="button" tone="ghost" onClick={() => startEditingAnnouncement(announcement)}>
+                          Edit
+                        </ActionButton>
+                        <ActionButton type="button" tone="ghost" onClick={() => void toggleAnnouncement(announcement.id, !announcement.active)}>
+                          {announcement.active ? "Pause" : "Activate"}
+                        </ActionButton>
+                      </div>
                     </div>
-                    <p className="mt-1 text-sm text-slate-400">{announcement.body}</p>
-                  </div>
-                  <ActionButton type="button" tone="ghost" onClick={() => void toggleAnnouncement(announcement.id, !announcement.active)}>
-                    {announcement.active ? "Pause" : "Activate"}
-                  </ActionButton>
+                  )}
                 </div>
               ))}
             </div>

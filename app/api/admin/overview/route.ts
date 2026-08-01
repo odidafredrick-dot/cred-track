@@ -165,6 +165,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const period = parsePeriod(searchParams.get("period"));
   const groupBy = parseGroupBy(searchParams.get("groupBy"), period);
+  const entityId = searchParams.get("entityId")?.trim() || null;
   const days = periodDays[period];
   const now = new Date();
   const today = new Date(now);
@@ -174,6 +175,21 @@ export async function GET(request: NextRequest) {
     : startOfDay(addDays(now, -(days - 1)));
   const previousStart = addDays(currentStart, -days);
   const buckets = createBuckets(currentStart, now, groupBy);
+
+  const entityWhere = entityId
+    ? {
+      OR: [
+        { userId: entityId },
+        { customerId: entityId },
+        { buyerUserId: entityId },
+        { supplierId: entityId },
+        { businessUserId: entityId },
+        { supplierUserId: entityId },
+        { requesterUserId: entityId },
+        { userId: entityId },
+      ],
+    }
+    : {};
 
   const [
     totalUsers,
@@ -189,12 +205,14 @@ export async function GET(request: NextRequest) {
     recentPayments,
     recentOrders,
   ] = await Promise.all([
-    prisma.user.count(),
+    prisma.user.count({ where: entityId ? { id: entityId } : undefined }),
     prisma.userProfile.groupBy({
       by: ["role"],
+      where: entityId ? { userId: entityId } : undefined,
       _count: { _all: true },
     }),
     prisma.user.findMany({
+      where: entityId ? { id: entityId } : undefined,
       select: {
         id: true,
         createdAt: true,
@@ -204,6 +222,7 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.credit.findMany({
+      where: entityId ? { userId: entityId } : undefined,
       select: {
         id: true,
         customerName: true,
@@ -216,10 +235,11 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.creditPayment.findMany({
+      where: entityId ? { credit: { userId: entityId } } : undefined,
       select: { id: true, amount: true, createdAt: true },
     }),
     prisma.stockItem.findMany({
-      where: { quantity: { lt: 10 } },
+      where: entityId ? { userId: entityId, quantity: { lt: 10 } } : { quantity: { lt: 10 } },
       select: {
         id: true,
         product: true,
@@ -231,6 +251,7 @@ export async function GET(request: NextRequest) {
       take: 8,
     }),
     prisma.supplierOrder.findMany({
+      where: entityId ? { OR: [{ supplierId: entityId }, { buyerUserId: entityId }] } : undefined,
       select: {
         id: true,
         supplierId: true,
@@ -241,7 +262,7 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.holwaRiskScoreCheck.findMany({
-      where: { createdAt: { gte: previousStart } },
+      where: entityId ? { requesterUserId: entityId, createdAt: { gte: previousStart } } : { createdAt: { gte: previousStart } },
       select: {
         id: true,
         debtorPhone: true,
@@ -252,10 +273,11 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     }),
     prisma.session.findMany({
-      where: { updatedAt: { gte: today } },
+      where: entityId ? { userId: entityId, updatedAt: { gte: today } } : { updatedAt: { gte: today } },
       select: { id: true },
     }),
     prisma.credit.findMany({
+      where: entityId ? { userId: entityId } : undefined,
       select: {
         id: true,
         customerName: true,
@@ -266,6 +288,7 @@ export async function GET(request: NextRequest) {
       take: 5,
     }),
     prisma.creditPayment.findMany({
+      where: entityId ? { credit: { userId: entityId } } : undefined,
       select: {
         id: true,
         amount: true,
@@ -280,6 +303,7 @@ export async function GET(request: NextRequest) {
       take: 5,
     }),
     prisma.supplierOrder.findMany({
+      where: entityId ? { OR: [{ supplierId: entityId }, { buyerUserId: entityId }] } : undefined,
       select: {
         id: true,
         buyerName: true,
@@ -344,8 +368,8 @@ export async function GET(request: NextRequest) {
 
   const monthStart = new Date(today);
   monthStart.setDate(today.getDate() - 30);
-  const newUsersToday = await prisma.user.count({ where: { createdAt: { gte: today } } });
-  const newUsersThisMonth = await prisma.user.count({ where: { createdAt: { gte: monthStart } } });
+  const newUsersToday = await prisma.user.count({ where: entityId ? { id: entityId, createdAt: { gte: today } } : { createdAt: { gte: today } } });
+  const newUsersThisMonth = await prisma.user.count({ where: entityId ? { id: entityId, createdAt: { gte: monthStart } } : { createdAt: { gte: monthStart } } });
 
   const activeSessionsToday = sessions.length;
 

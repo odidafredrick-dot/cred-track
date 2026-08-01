@@ -1,7 +1,7 @@
 {
   "name": "Holwa",
   "short_name": "Holwa",
-  "description": "Credit tracking, stock, payments, and customer reminders for shops.",
+  "description": "Credit tracking, stock, supplier orders, M-Pesa payments, and customer reminders for Kenyan businesses.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

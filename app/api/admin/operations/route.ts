@@ -132,6 +132,9 @@ export async function PATCH(request: NextRequest) {
     id?: string;
     active?: boolean;
     enabled?: boolean;
+    title?: string;
+    body?: string;
+    audience?: UserRole | "";
   };
   const id = clean(body.id, 160);
 
@@ -140,9 +143,40 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.type === "announcement") {
+    const updateData: {
+      active?: boolean;
+      title?: string;
+      body?: string;
+      audience?: UserRole | null;
+    } = {};
+
+    if (body.active !== undefined) {
+      updateData.active = Boolean(body.active);
+    }
+
+    if (body.title !== undefined) {
+      const title = clean(body.title, 120);
+      if (!title) {
+        return NextResponse.json({ error: "Announcement title cannot be empty." }, { status: 400 });
+      }
+      updateData.title = title;
+    }
+
+    if (body.body !== undefined) {
+      const message = clean(body.body, 1000);
+      if (!message) {
+        return NextResponse.json({ error: "Announcement body cannot be empty." }, { status: 400 });
+      }
+      updateData.body = message;
+    }
+
+    if (body.audience !== undefined) {
+      updateData.audience = body.audience && isUserRole(body.audience) ? body.audience : null;
+    }
+
     const announcement = await prisma.systemAnnouncement.update({
       where: { id },
-      data: { active: Boolean(body.active) },
+      data: updateData,
     });
 
     await recordAdminAction({
@@ -150,9 +184,7 @@ export async function PATCH(request: NextRequest) {
       action: "ANNOUNCEMENT_UPDATED",
       targetType: "SystemAnnouncement",
       targetId: announcement.id,
-      summary: `${announcement.active ? "Activated" : "Paused"} announcement ${
-        announcement.title
-      }.`,
+      summary: `Updated announcement ${announcement.title}.`,
     });
 
     return NextResponse.json({ announcement });

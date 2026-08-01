@@ -275,7 +275,7 @@ export default function LoginPage() {
               <Image src="/logo.jpeg" alt="Holwa logo" width={42} height={42} className="rounded-full" />
               <div>
                 <p className="text-lg font-semibold text-white">Holwa</p>
-                <p className="text-sm text-slate-300">Credit tracking for growing businesses</p>
+                <p className="text-sm text-slate-300">Credit tracking for Kenyan businesses</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -302,11 +302,11 @@ export default function LoginPage() {
                 <p className="inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-sm font-semibold text-emerald-300">
                   Built for fast-moving teams
                 </p>
-                <h2 className="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-                  Keep every credit conversation, reminder, and payment in one calm workspace.
-                </h2>
+                <h1 className="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  Holwa credit tracking for Kenyan businesses.
+                </h1>
                 <p className="mt-6 text-lg leading-8 text-slate-300">
-                  Holwa helps traders, suppliers, and business owners stay on top of customer balances, follow-ups, and stock activity without juggling scattered notes.
+                  Track goods and services credit, customer balances, supplier orders, stock, M-Pesa payments, and reminders without juggling scattered notes.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <button
@@ -399,12 +399,12 @@ export default function LoginPage() {
                 <p className="text-sm font-semibold text-emerald-700">
                   Choose your workspace
                 </p>
-                <h2 className="mt-3 text-4xl font-bold text-gray-900 sm:text-5xl">
-                  Continue with the account type that fits your work.
-                </h2>
+                <h1 className="mt-3 text-4xl font-bold text-gray-900 sm:text-5xl">
+                  Holwa credit tracking for Kenyan businesses.
+                </h1>
                 <p className="mt-4 max-w-xl text-base text-gray-600">
-                  Sign in once, then Holwa opens the right dashboard setup for your
-                  role.
+                  Sign in once to track goods and services credit, customer balances,
+                  supplier orders, stock, M-Pesa payments, and reminders.
                 </p>
               </div>
 

@@ -424,12 +424,12 @@ function hasBusinessProfileDetails(profile: UserProfile) {
 
   return Boolean(
     profile.businessName &&
-      profile.county &&
-      profile.town &&
-      profile.estate &&
-      profile.phoneNumber &&
-      profile.paymentMode &&
-      profile.description
+    profile.county &&
+    profile.town &&
+    profile.estate &&
+    profile.phoneNumber &&
+    profile.paymentMode &&
+    profile.description
   );
 }
 
@@ -496,6 +496,7 @@ export default function DashboardPage() {
   const [profileError, setProfileError] = useState("");
   const [profileForm, setProfileForm] =
     useState<ProfileForm>(emptyProfileForm);
+  const [systemAnnouncements, setSystemAnnouncements] = useState<InboxItem[]>([]);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] =
@@ -574,6 +575,52 @@ export default function DashboardPage() {
       router.push("/");
     }
   }, [session, isPending, router]);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadAnnouncements = async () => {
+      try {
+        const response = await fetch("/api/announcements");
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          announcements?: Array<{
+            id: string;
+            title: string;
+            body: string;
+          }>;
+        };
+
+        if (isActive) {
+          setSystemAnnouncements(
+            (data.announcements || []).map((item) => ({
+              id: item.id,
+              title: item.title,
+              body: item.body,
+              variant: "info" as const,
+            }))
+          );
+        }
+      } catch {
+        if (isActive) {
+          setSystemAnnouncements([]);
+        }
+      }
+    };
+
+    void loadAnnouncements();
+
+    return () => {
+      isActive = false;
+    };
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -777,6 +824,10 @@ export default function DashboardPage() {
   const inboxItems = useMemo<InboxItem[]>(() => {
     const items: InboxItem[] = [];
 
+    if (systemAnnouncements.length > 0) {
+      items.push(...systemAnnouncements);
+    }
+
     if (isProfileDialogOpen && pendingProfileRole) {
       items.push({
         id: "profile",
@@ -790,9 +841,8 @@ export default function DashboardPage() {
       items.push({
         id: "overdue",
         title: "Overdue credits",
-        body: `${overdueCount} credit record${
-          overdueCount === 1 ? " is" : "s are"
-        } overdue.`,
+        body: `${overdueCount} credit record${overdueCount === 1 ? " is" : "s are"
+          } overdue.`,
         variant: "warning",
       });
     }
@@ -801,9 +851,8 @@ export default function DashboardPage() {
       items.push({
         id: "due-today",
         title: "Due today",
-        body: `${dueTodayCount} credit record${
-          dueTodayCount === 1 ? " is" : "s are"
-        } due today.`,
+        body: `${dueTodayCount} credit record${dueTodayCount === 1 ? " is" : "s are"
+          } due today.`,
         variant: "info",
       });
     }
@@ -812,9 +861,8 @@ export default function DashboardPage() {
       items.push({
         id: "low-stock",
         title: "Low stock",
-        body: `${lowStockItems.length} stock item${
-          lowStockItems.length === 1 ? " needs" : "s need"
-        } attention.`,
+        body: `${lowStockItems.length} stock item${lowStockItems.length === 1 ? " needs" : "s need"
+          } attention.`,
         variant: "warning",
       });
     }
@@ -836,6 +884,7 @@ export default function DashboardPage() {
     overdueCount,
     pendingProfileRole,
     reminderBalance,
+    systemAnnouncements,
   ]);
   const filteredSuppliers = useMemo(() => {
     const term = supplierSearch.trim().toLowerCase();
@@ -911,7 +960,7 @@ export default function DashboardPage() {
     () =>
       selectedCustomerKey
         ? customerGroups.find((group) => group.key === selectedCustomerKey) ||
-          null
+        null
         : null,
     [customerGroups, selectedCustomerKey]
   );
@@ -1122,11 +1171,11 @@ export default function DashboardPage() {
         setTopupStatus((current) =>
           current.stage === "waiting"
             ? {
-                ...current,
-                message:
-                  statusData.message ||
-                  "Waiting for Safaricom confirmation. Check your phone and enter your M-Pesa PIN.",
-              }
+              ...current,
+              message:
+                statusData.message ||
+                "Waiting for Safaricom confirmation. Check your phone and enter your M-Pesa PIN.",
+            }
             : current
         );
       } catch {
@@ -1136,10 +1185,10 @@ export default function DashboardPage() {
         setTopupStatus((current) =>
           current.stage === "waiting"
             ? {
-                ...current,
-                message:
-                  "Still checking payment status. Keep this card open while we wait for Safaricom.",
-              }
+              ...current,
+              message:
+                "Still checking payment status. Keep this card open while we wait for Safaricom.",
+            }
             : current
         );
       }
@@ -1305,9 +1354,8 @@ export default function DashboardPage() {
           `Total after adding: ${formatMoney(
             existingGroup.totalUnpaid + newAmountOwed
           )}.`,
-          `Unpaid item count after adding: ${
-            totalItemQuantity(existingGroup.unpaidItems) +
-            totalItemQuantity(items)
+          `Unpaid item count after adding: ${totalItemQuantity(existingGroup.unpaidItems) +
+          totalItemQuantity(items)
           }.`,
           "",
           "Add this credit anyway?",
@@ -1662,8 +1710,8 @@ export default function DashboardPage() {
       setStockItems((prev) =>
         stockEditingItem
           ? prev.map((item) =>
-              item.id === stockEditingItem.id ? data.item : item
-            )
+            item.id === stockEditingItem.id ? data.item : item
+          )
           : [data.item, ...prev]
       );
       resetStockForm();
@@ -1947,8 +1995,7 @@ export default function DashboardPage() {
       setToast({
         message:
           data.warning ||
-          `Restock request sent to ${
-            customer.profile.businessName || "business"
+          `Restock request sent to ${customer.profile.businessName || "business"
           }.`,
         variant: data.warning ? "warning" : "success",
       });
@@ -2634,11 +2681,10 @@ export default function DashboardPage() {
                         <p className="mt-1 text-sm text-gray-500">{item.body}</p>
                       </div>
                       <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          item.variant === "warning"
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${item.variant === "warning"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-blue-50 text-blue-700"
-                        }`}
+                          }`}
                       >
                         {item.variant === "warning" ? "Action" : "Info"}
                       </span>
@@ -2807,11 +2853,10 @@ export default function DashboardPage() {
                       <p className="mt-1 text-sm text-gray-500">{item.body}</p>
                     </div>
                     <span
-                      className={`mt-2 rounded-full px-3 py-1 text-xs font-medium sm:mt-0 ${
-                        item.variant === "warning"
+                      className={`mt-2 rounded-full px-3 py-1 text-xs font-medium sm:mt-0 ${item.variant === "warning"
                           ? "bg-amber-50 text-amber-700"
                           : "bg-blue-50 text-blue-700"
-                      }`}
+                        }`}
                     >
                       {item.variant === "warning" ? "Action" : "Info"}
                     </span>
@@ -2953,97 +2998,96 @@ export default function DashboardPage() {
         </div>
 
         {isSupplierDashboard ? (
-        <div className="bg-white rounded-lg shadow">
-          <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
-            <h3 className="text-lg font-semibold text-gray-800">
-              {isSupplierDashboard ? "In Store" : "Stock items"}
-            </h3>
-            <button
-              onClick={openAddStockDialog}
-              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
-            >
-              {isSupplierDashboard ? "Add item" : "Add stock"}
-            </button>
-          </div>
-          <div className="divide-y">
-            {stockItems.length === 0 ? (
-              <div className="px-6 py-6 text-sm text-gray-500">
-                No stock items added yet.
-              </div>
-            ) : (
-              stockItems.map((item) => (
-                <div
-                  key={item.id}
-                  className={
-                    isSupplierDashboard
-                      ? "grid gap-4 px-6 py-4 md:grid-cols-[2fr_1fr_3fr_auto] md:items-center"
-                      : "flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
-                  }
-                >
-                  <div>
-                    <p className="text-sm text-gray-500">Product</p>
-                    <p className="text-base font-semibold text-gray-800">
-                      {item.product}
-                    </p>
-                  </div>
-                  {isSupplierDashboard ? (
-                    <>
-                      <div>
-                        <p className="text-sm text-gray-500">Price</p>
-                        <p className="text-base font-semibold text-gray-800">
-                          {formatMoney(Number(item.sellingPrice))}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Offers (Text)</p>
-                        <p className="text-sm text-gray-700">
-                          {item.offers || "No offer added"}
-                        </p>
-                      </div>
-                    </>
-                  ) : (
+          <div className="bg-white rounded-lg shadow">
+            <div className="flex flex-col gap-3 px-6 py-4 border-b md:flex-row md:items-center md:justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {isSupplierDashboard ? "In Store" : "Stock items"}
+              </h3>
+              <button
+                onClick={openAddStockDialog}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+              >
+                {isSupplierDashboard ? "Add item" : "Add stock"}
+              </button>
+            </div>
+            <div className="divide-y">
+              {stockItems.length === 0 ? (
+                <div className="px-6 py-6 text-sm text-gray-500">
+                  No stock items added yet.
+                </div>
+              ) : (
+                stockItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={
+                      isSupplierDashboard
+                        ? "grid gap-4 px-6 py-4 md:grid-cols-[2fr_1fr_3fr_auto] md:items-center"
+                        : "flex flex-col md:flex-row md:items-center md:justify-between px-6 py-4 gap-4"
+                    }
+                  >
                     <div>
-                      <p className="text-sm text-gray-500">Alert</p>
-                      <p
-                        className={`text-base font-semibold ${
-                          item.quantity < 5
-                            ? "text-red-600"
-                            : item.quantity < 10
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                        }`}
-                      >
-                        {item.quantity < 5
-                          ? "Extremely low"
-                          : item.quantity < 10
-                          ? "Low"
-                          : "Normal"}
+                      <p className="text-sm text-gray-500">Product</p>
+                      <p className="text-base font-semibold text-gray-800">
+                        {item.product}
                       </p>
                     </div>
-                  )}
-                  <button
-                    onClick={() =>
-                      isSupplierDashboard
-                        ? openEditStockDialog(item)
-                        : setSelectedStock(item)
-                    }
-                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
-                  >
-                    {isSupplierDashboard ? "Edit" : "View"}
-                  </button>
-                  {!isSupplierDashboard ? (
+                    {isSupplierDashboard ? (
+                      <>
+                        <div>
+                          <p className="text-sm text-gray-500">Price</p>
+                          <p className="text-base font-semibold text-gray-800">
+                            {formatMoney(Number(item.sellingPrice))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Offers (Text)</p>
+                          <p className="text-sm text-gray-700">
+                            {item.offers || "No offer added"}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <p className="text-sm text-gray-500">Alert</p>
+                        <p
+                          className={`text-base font-semibold ${item.quantity < 5
+                              ? "text-red-600"
+                              : item.quantity < 10
+                                ? "text-amber-600"
+                                : "text-emerald-600"
+                            }`}
+                        >
+                          {item.quantity < 5
+                            ? "Extremely low"
+                            : item.quantity < 10
+                              ? "Low"
+                              : "Normal"}
+                        </p>
+                      </div>
+                    )}
                     <button
-                      onClick={() => handleNotifySupplier(item.id)}
-                      className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                      onClick={() =>
+                        isSupplierDashboard
+                          ? openEditStockDialog(item)
+                          : setSelectedStock(item)
+                      }
+                      className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50"
                     >
-                      Notify supplier
+                      {isSupplierDashboard ? "Edit" : "View"}
                     </button>
-                  ) : null}
-                </div>
-              ))
-            )}
+                    {!isSupplierDashboard ? (
+                      <button
+                        onClick={() => handleNotifySupplier(item.id)}
+                        className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800"
+                      >
+                        Notify supplier
+                      </button>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
         ) : null}
       </main>
 
@@ -3057,11 +3101,10 @@ export default function DashboardPage() {
                 type="button"
                 key={tab.id}
                 onClick={() => handleMobileTabChange(tab.id)}
-                className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold transition ${
-                  isActive
+                className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold transition ${isActive
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
-                }`}
+                  }`}
               >
                 <MobileTabIcon tab={tab.id} />
                 <span className="max-w-full truncate">{tab.label}</span>
@@ -3279,11 +3322,10 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
-                          item.variant === "warning"
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${item.variant === "warning"
                             ? "bg-amber-50 text-amber-700"
                             : "bg-blue-50 text-blue-700"
-                        }`}
+                          }`}
                       >
                         {item.variant === "warning" ? "Action" : "Info"}
                       </span>
@@ -3457,11 +3499,10 @@ export default function DashboardPage() {
                                 </p>
                               </div>
                               <span
-                                className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${
-                                  item.isLow
+                                className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${item.isLow
                                     ? "bg-amber-50 text-amber-700"
                                     : "bg-emerald-50 text-emerald-700"
-                                }`}
+                                  }`}
                               >
                                 {item.status}
                               </span>
@@ -3779,8 +3820,8 @@ export default function DashboardPage() {
                       {topupStatus.stage === "sending"
                         ? "Sending..."
                         : topupStatus.stage === "waiting"
-                        ? "Waiting..."
-                        : "Send STK Push"}
+                          ? "Waiting..."
+                          : "Send STK Push"}
                     </button>
                   </>
                 )}
@@ -4108,8 +4149,8 @@ export default function DashboardPage() {
                     ? "Edit store item"
                     : "Edit stock"
                   : isSupplierDashboard
-                  ? "Add store item"
-                  : "Add stock"}
+                    ? "Add store item"
+                    : "Add stock"}
               </h3>
               <button
                 onClick={() => {
@@ -4225,10 +4266,10 @@ export default function DashboardPage() {
                   {isStockSubmitting
                     ? "Saving..."
                     : stockEditingItem
-                    ? "Save changes"
-                    : isSupplierDashboard
-                    ? "Save item"
-                    : "Save stock"}
+                      ? "Save changes"
+                      : isSupplierDashboard
+                        ? "Save item"
+                        : "Save stock"}
                 </button>
               </div>
             </form>
@@ -4330,11 +4371,10 @@ export default function DashboardPage() {
       {toast ? (
         <div className="fixed bottom-6 right-6 z-50">
           <div
-            className={`rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
-              toast.variant === "success"
+            className={`rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${toast.variant === "success"
                 ? "bg-emerald-600 text-white"
                 : "bg-amber-500 text-white"
-            }`}
+              }`}
           >
             {toast.message}
           </div>
